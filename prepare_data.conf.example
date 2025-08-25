@@ -1,0 +1,3 @@
+INPUTDIR="./test/resources"
+FILELIST="./filelist.txt"
+CHECKMD5=true

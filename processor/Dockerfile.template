@@ -1,0 +1,58 @@
+# Baseimage "oni:11500/uokbaseimage/[...]"
+#   See https://github.com/DIAGNijmegen/uok-base-images
+
+FROM oni:11500/uokbaseimage/[...]
+
+
+# This is an optional, but probably necessary section for installing new 
+# libraries. Use versioned pip/conda packages only or packages from the base
+# system. Allowed example install rules are:
+
+# RUN apt-get install -y libpng-dev
+# RUN pip3 install scikit-image==0.1
+
+
+## COPY CODE AND EXPERIMENT DATA ##
+
+# This rule copies everything from the current checkout-into the container's
+# working directory. 
+
+COPY [".", "/home/user/"]
+
+# Possibly you want to execute some sanity checks that certain directories
+# exits, for example, if you want to assure that certain experiment-data was
+# copied. This is optional, but encouraged to use if you require external
+# experiment data to be embedded into the image:
+
+# Check if the path "/home/user/somepath" exists:
+# RUN path="/home/user/somepath" && \
+#    [ ! -e "$path" ] && echo "Path is missing: $path" && exit 1
+
+
+## CUSTOMIZE ENTRYPOINT ##
+
+USER user
+WORKDIR /home/user
+ENTRYPOINT /usr/bin/python3 /home/user/processor.py $0 $@
+
+
+## PROCESSOR LABELS ##
+
+# These labels are required and describe what kind of hardware 
+# your processor requires to run. Fill in the apropriate data:
+
+LABEL nl.diagnijmegen.rse.algorithm.author="The author's name "
+LABEL nl.diagnijmegen.rse.algorithm.ticket=trac-ticket-number (e.g. 5121)
+LABEL nl.diagnijmegen.rse.algorithm.name="name-of-the-processor"
+
+# Required hardware configuration to run the unit of knowledge. Example:
+LABEL nl.diagnijmegen.rse.algorithm.hardware.cpu.count=3
+LABEL nl.diagnijmegen.rse.algorithm.hardware.cpu.capabilities=""
+LABEL nl.diagnijmegen.rse.algorithm.hardware.memory=15G
+LABEL nl.diagnijmegen.rse.algorithm.hardware.gpu.count=1
+LABEL nl.diagnijmegen.rse.algorithm.hardware.gpu.cuda_compute_capability=""
+LABEL nl.diagnijmegen.rse.algorithm.hardware.gpu.memory=8G
+
+# Add Git commit ID of current codebase
+ARG GIT_COMMIT_ID=unspecified
+LABEL nl.diagnijmegen.rse.algorithm.git_commit_id=$GIT_COMMIT_ID

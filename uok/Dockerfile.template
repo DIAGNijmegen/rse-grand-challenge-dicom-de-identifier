@@ -1,0 +1,84 @@
+# Baseimage "oni:11500/uokbaseimage/[...]"
+#   See https://github.com/DIAGNijmegen/uok-base-images
+
+FROM oni:11500/uokbaseimage/[...]
+
+
+## INSTALL RULES ##
+
+# Embed the prepare_data-script into the root-directory of the image. REQUIRED!
+
+# Uncomment correct line (depepnds on sh/py extension)
+# COPY prepare_data.py /
+# COPY prepare_data.sh /
+
+
+# This is an optional, but probably necessary section for installing new 
+# libraries. Use versioned pip/conda packages only or packages from the base
+# system. Allowed example install rules are:
+
+# RUN apt-get install -y libpng-dev
+# RUN pip3 install scikit-image==0.1
+
+
+## COPY CODE AND EXPERIMENT DATA ##
+
+# This rule copies everything from the current checkout-into the container's
+# working directory. 
+
+COPY [".", "/home/user/"]
+
+# Possibly you want to execute some sanity checks that certain directories
+# exits, for example, if you want to assure that certain experiment-data was
+# copied. This is optional, but encouraged to use if you require external
+# experiment data to be embedded into the image:
+
+# Check if the path "/home/user/somepath" exists:
+# RUN path="/home/user/somepath" && \
+#    [ ! -e "$path" ] && echo "Path is missing: $path" && exit 1
+
+
+## CUSTOMIZE ENTRYPOINT ##
+
+# OPTIONAL section to setup an alternative entrypoint. It is perfectly fine to
+# use the entrypoint from the base image though, since it already starts.
+
+# USER user
+# WORKDIR /home/user
+# ENTRYPOINT "jupyter" "notebook" "--ip.address=0.0.0.0" "--NotebookApp.token="
+
+
+## UNIT OF KNOWLEDGE LABELS ##
+
+# These labels are required and describe what kind of hardware 
+# your unit of knowledge requires to run and what experiment this unit of
+# knowledge contains. Fill in the apropriate data:
+
+LABEL nl.diagnijmegen.rse.uok.author="The author's name "
+LABEL nl.diagnijmegen.rse.uok.ticket=trac-ticket-number (e.g. 5121)
+LABEL nl.diagnijmegen.rse.uok.name="Name of the experiment"
+
+# Entrypoint for the experiment. Make sure this points to the jupyter notebook 
+# that is the entrypoint to you unit of knowledge. This example will work
+# for the template entrypoint:
+LABEL nl.diagnijmegen.rse.uok.entry_point="Example: http://{{hostname}}:{{nl.diagnijmegen.rse.uok.ports.jupyter_notebook}}/notebooks/entrypoint.ipynb"
+
+# List of named ports to be exposed by the container. Example
+LABEL nl.diagnijmegen.rse.uok.ports.jupyter_notebook=8888
+# In this example "jupyter_notebook" is the named port, which can be referred
+# to in the entry_point (see above)
+
+# Required input dir size and scratch dir size for this experiment. Examples:
+LABEL nl.diagnijmegen.rse.uok.volume_sizes.input=50G
+LABEL nl.diagnijmegen.rse.uok.volume_sizes.scratch=120G
+
+# Required hardware configuration to run the unit of knowledge. Example:
+LABEL nl.diagnijmegen.rse.uok.hardware.cpus=3
+LABEL nl.diagnijmegen.rse.uok.hardware.gpu.memory=8G
+LABEL nl.diagnijmegen.rse.uok.hardware.gpu.type=
+LABEL nl.diagnijmegen.rse.uok.hardware.gpus=1
+LABEL nl.diagnijmegen.rse.uok.hardware.memory=60G
+
+# Add Git commit ID of current codebase
+ARG GIT_COMMIT_ID=unspecified
+LABEL nl.diagnijmegen.rse.uok.git_commit_id=$GIT_COMMIT_ID
