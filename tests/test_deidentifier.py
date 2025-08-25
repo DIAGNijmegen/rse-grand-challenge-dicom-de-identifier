@@ -1,10 +1,11 @@
+from pathlib import Path
 from typing import Any, Dict
 
 import pydicom
-from pathlib import Path
+
 from grand_challenge_dicom_de_identifier.deidentifier import (
-    DeIdentifier,
     ActionKind,
+    DeIdentifier,
 )
 from tests import RESOURCES_PATH
 
@@ -17,10 +18,7 @@ def procedure_factory(
     sop_default: ActionKind = ActionKind.REMOVE,
     tag_default: ActionKind = ActionKind.REMOVE,
 ) -> Dict[str, Any]:
-    """
-    Create a simple de-identification procedure for
-    testing a single SOP class.
-    """
+    """Build a procedure for a single SOP class."""
     tags = {}
     for tag_name, action in tag_actions.items():
         tag_int = pydicom.datadict.tag_for_keyword(tag_name) or 0
@@ -40,7 +38,7 @@ def procedure_factory(
     }
 
 
-def test_deidentify_files(tmp_path: Path) -> None:
+def test_deidentify_files(tmp_path: Path) -> None:  # noqa
     deidentifier = DeIdentifier(
         procedure=procedure_factory(
             tag_actions={

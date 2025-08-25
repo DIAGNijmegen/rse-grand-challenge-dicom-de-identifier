@@ -1,13 +1,12 @@
+import os
 from enum import Enum
 from functools import partial
-import os
-from typing import AnyStr, BinaryIO, Dict, Any
-from pathlib import Path
+from typing import Any, AnyStr, BinaryIO, Dict
+
+import pydicom
 from pydicom import DataElement, Dataset
 from pydicom.filebase import ReadableBuffer, WriteableBuffer
 from pydicom.fileutil import PathType
-
-import pydicom
 
 from grand_challenge_dicom_de_identifier.exceptions import (
     RejectedDICOMFileError,
@@ -15,6 +14,8 @@ from grand_challenge_dicom_de_identifier.exceptions import (
 
 
 class ActionKind(str, Enum):
+    """Enumeration of possible actions for DICOM de-identification."""
+
     REMOVE = "X"
     KEEP = "K"
 
@@ -36,9 +37,9 @@ class DeIdentifier:
 
         Parameters
         ----------
-        procedure : None | Procedure, optional
+        procedure : optional
             De-identification procedure to apply, by default the
-            grand-challenge procedure is used
+            grand-challenge procedure is used.
         """
         self.procedure = procedure or {}
 
@@ -49,35 +50,35 @@ class DeIdentifier:
         *,
         output: str | os.PathLike[AnyStr] | BinaryIO | WriteableBuffer,
     ) -> None:
+        """Process a DICOM file and save the de-identified result in output."""
         with pydicom.dcmread(fp=file, force=True) as dataset:
             self.process_dataset(dataset)
             dataset.save_as(output)
 
     def process_dataset(self, dataset: pydicom.Dataset) -> None:
-        """Processes a DICOM dataset in place."""
-
+        """Process a DICOM dataset in place."""
         try:
             sop_procedure = self.procedure["sopClass"][dataset.SOPClassUID]
         except KeyError:
             default = self.procedure["default"]
             if default == ActionKind.REJECT:
-                raise RejectedDICOMFileError
+                raise RejectedDICOMFileError() from None
             elif default == ActionKind.KEEP:
                 sop_procedure = {"default": ActionKind.KEEP}
             else:
                 raise NotImplementedError(
                     f"Default action {default} not implemented"
-                )
+                ) from None
 
         dataset.walk(
             partial(
-                self._process_element,
+                self.__process_element,
                 default_action=sop_procedure["default"],
                 action_lookup=sop_procedure["tags"],
             )
         )
 
-    def _process_element(
+    def __process_element(
         self,
         dataset: Dataset,
         elem: DataElement,
