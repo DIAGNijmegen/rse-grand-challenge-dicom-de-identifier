@@ -1,7 +1,0 @@
-# Use evalutils to set up your dockerfile and then
-# add the lines below
-
-
-# Add Git commit ID of current codebase
-ARG GIT_COMMIT_ID=unspecified
-LABEL git_commit_id=$GIT_COMMIT_ID

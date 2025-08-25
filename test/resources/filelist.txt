@@ -1,3 +1,0 @@
-./f1.txt
-./f2.txt
-./sub/f3.txt
