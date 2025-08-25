@@ -1,7 +1,0 @@
-# Declare files that will always have LF line endings on checkout.
-*.sh text eol=lf
-*.conf.example text eol=lf
-*.conf text eol=lf
-*.bats text eol=lf
-*.txt text eol=lf
-

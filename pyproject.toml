@@ -1,0 +1,34 @@
+[project]
+name = "grand-challenge-dicom-de-identifier"
+description = "Python package to de-identify DICOM files using a pre-defined procedure"
+version = "0.0.1"
+authors = [
+    {name = "Chris van Run"},
+]
+license = {text = "Apache-2.0"}
+requires-python = ">=3.9, <4.0"
+dependencies = []
+readme = "README.md"
+
+[project.urls]
+repository = "https://github.com/DIAGNijmegen/rse-grand-challenge-dicom-de-identifier"
+
+[dependency-groups]
+dev = [
+    "pytest",
+]
+
+[tool.isort]
+profile = "black"
+known_first_party = ["grand_challenge_dicom_de_identifier", "tests"]
+line_length = 79
+
+[tool.black]
+line-length = 79
+target-version = ['py39']
+
+[tool.pytest.ini_options]
+testpaths = [
+    "tests",
+]
+python_files = "tests.py test_*.py *_tests.py"
