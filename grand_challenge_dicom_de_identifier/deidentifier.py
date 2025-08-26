@@ -71,6 +71,24 @@ class DicomDeidentifier:
 
     def deidentify_dataset(self, dataset: pydicom.Dataset) -> None:
         """Process a DICOM dataset in place."""
+        sop_class_procedure = self._get_sop_class_procedure(dataset)
+
+        dataset.walk(
+            partial(
+                self._handle_element,
+                action_lookup=sop_class_procedure["tags"],
+                default_action={
+                    "default": sop_class_procedure.get(
+                        "default", ActionKind.REMOVE
+                    ),
+                    "justification": sop_class_procedure.get(
+                        "justification", ""
+                    ),
+                },
+            )
+        )
+
+    def _get_sop_class_procedure(self, dataset: Dataset) -> Any:
         try:
             sop_procedure = self.procedure["sopClass"][dataset.SOPClassUID]
         except KeyError:
@@ -89,16 +107,7 @@ class DicomDeidentifier:
                     f"Default action {default} not implemented"
                 ) from None
 
-        dataset.walk(
-            partial(
-                self._handle_element,
-                action_lookup=sop_procedure["tags"],
-                default_action={
-                    "default": sop_procedure.get("default", ActionKind.REMOVE),
-                    "justification": sop_procedure.get("justification", ""),
-                },
-            )
-        )
+        return sop_procedure
 
     def _handle_element(
         self,

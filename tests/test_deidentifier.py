@@ -113,7 +113,7 @@ def test_deidentify_files(tmp_path: Path) -> None:  # noqa
                 RejectedDICOMFileError, match="TEST default justification"
             ),
         ),
-        (  # No SOP Class match: REJECT even if no default is specified
+        (  # No SOP Class match: fallback to REJECT when no default is specified
             TEST_SOP_CLASS,
             {
                 "sopClass": {
@@ -406,7 +406,7 @@ def test_uid_action() -> None:  # noqa
     assert new_ds.Modality != ds.Modality
 
 
-def test_missing_default_action() -> None:  # noqa
+def test_fallback_default_action() -> None:  # noqa
     """Test that missing default action leads to REMOVE being aplied."""
     ds = Dataset()
     ds.SOPClassUID = TEST_SOP_CLASS
