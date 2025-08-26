@@ -404,3 +404,22 @@ def test_uid_action() -> None:  # noqa
     another_deidentifier.deidentify_dataset(new_ds)
     assert new_ds.PatientName != ds.PatientName
     assert new_ds.Modality != ds.Modality
+
+
+def test_missing_default_action() -> None:  # noqa
+    """Test that missing default action leads to REMOVE being aplied."""
+    ds = Dataset()
+    ds.SOPClassUID = TEST_SOP_CLASS
+    ds.PatientName = "Test^Patient"
+
+    deidentifier = DicomDeidentifier(
+        procedure={  # Note: no default action has been specified
+            "sopClass": {TEST_SOP_CLASS: {"tags": {}}},
+        }
+    )
+
+    assert ds.PatientName == "Test^Patient"
+    deidentifier.deidentify_dataset(ds)
+    assert (
+        getattr(ds, "PatientName", None) is None
+    ), "Default action should be REMOVE"
