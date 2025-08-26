@@ -1,6 +1,5 @@
 import os
 from collections import defaultdict
-from enum import Enum
 from functools import partial
 from typing import Any, AnyStr, BinaryIO, Dict
 
@@ -12,20 +11,8 @@ from pydicom.fileutil import PathType
 from grand_challenge_dicom_de_identifier.exceptions import (
     RejectedDICOMFileError,
 )
-
-
-class ActionKind(str, Enum):
-    """Enumeration of possible actions for DICOM de-identification."""
-
-    REMOVE = "X"
-    KEEP = "K"
-
-    REPLACE = "D"
-    REPLACE_0 = "Z"
-    UID = "U"
-
-    REJECT = "R"
-
+from grand_challenge_dicom_de_identifier.models import ActionKind
+from grand_challenge_dicom_de_identifier.typing import Action
 
 # Requested via http://www.medicalconnections.co.uk/
 GRAND_CHALLENGE_ROOT_UID: str = "1.2.826.0.1.3680043.10.1666."
@@ -87,9 +74,14 @@ class DicomDeidentifier:
         try:
             sop_procedure = self.procedure["sopClass"][dataset.SOPClassUID]
         except KeyError:
-            default = self.procedure["default"]
+            default = self.procedure.get("default", ActionKind.REJECT)
             if default == ActionKind.REJECT:
-                raise RejectedDICOMFileError() from None
+                raise RejectedDICOMFileError(
+                    justification=self.procedure.get(
+                        "justification",
+                        f"SOP Class {dataset.SOPClassUID} is not supported",
+                    )
+                ) from None
             elif default == ActionKind.KEEP:
                 sop_procedure = {"default": ActionKind.KEEP, "tags": {}}
             else:
@@ -100,8 +92,11 @@ class DicomDeidentifier:
         dataset.walk(
             partial(
                 self._handle_element,
-                default_action=sop_procedure["default"],
                 action_lookup=sop_procedure["tags"],
+                default_action={
+                    "default": sop_procedure.get("default", ActionKind.REMOVE),
+                    "justification": sop_procedure.get("justification", ""),
+                },
             )
         )
 
@@ -109,22 +104,24 @@ class DicomDeidentifier:
         self,
         dataset: Dataset,
         elem: DataElement,
-        default_action: ActionKind,
-        action_lookup: Dict[str, Any],
+        action_lookup: Dict[str, Action],
+        default_action: Action,
     ) -> None:
         try:
-            action = action_lookup[str(elem.tag)]
+            action_desc = action_lookup[str(elem.tag)]
         except KeyError:
-            action = default_action
+            action = default_action["default"]
+            justification = default_action["justification"]
         else:
-            action = action["default"]
+            action = action_desc["default"]
+            justification = action_desc.get("justification", "")
 
         if action == ActionKind.REMOVE:
             del dataset[elem.tag]
         elif action == ActionKind.KEEP:
             pass
         elif action == ActionKind.REJECT:
-            raise RejectedDICOMFileError() from None
+            raise RejectedDICOMFileError(justification=justification) from None
         elif action == ActionKind.UID:
             elem.value = self.uid_map[elem.value]
         else:

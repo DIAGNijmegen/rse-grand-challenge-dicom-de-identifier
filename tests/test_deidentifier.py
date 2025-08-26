@@ -8,52 +8,34 @@ import pydicom
 import pytest
 from pydicom.dataset import Dataset
 
-from grand_challenge_dicom_de_identifier.deidentifier import (
-    ActionKind,
-    DicomDeidentifier,
-)
+from grand_challenge_dicom_de_identifier.deidentifier import DicomDeidentifier
 from grand_challenge_dicom_de_identifier.exceptions import (
     RejectedDICOMFileError,
 )
+from grand_challenge_dicom_de_identifier.models import ActionKind
 from tests import RESOURCES_PATH
 
-CT_IMAGE_SOP = "1.2.840.10008.5.1.4.1.1.2"
+TEST_SOP_CLASS = "1.2.840.10008.5.1.4.1.1.2"  # CT Image Storage
 
 
-def procedure_factory(
-    tag_actions: Dict[str, ActionKind],
-    sop_class: str = CT_IMAGE_SOP,
-    sop_default: ActionKind = ActionKind.REJECT,
-    tag_default: ActionKind = ActionKind.REMOVE,
-) -> Dict[str, Any]:
-    """Build a procedure for a single SOP class."""
-    tags = {}
-    for tag_name, action in tag_actions.items():
-        tag_int = pydicom.datadict.tag_for_keyword(tag_name) or 0
-        # Convert to (gggg,eeee) format of procedures
-        tag = f"({tag_int >> 16:04X},{tag_int & 0xFFFF:04X})"
-        tags[tag] = {"default": action}
-
-    return {
-        "default": sop_default,
-        "version": "test-procedure",
-        "sopClass": {
-            sop_class: {
-                "default": tag_default,
-                "tags": tags,
-            }
-        },
-    }
+def tag(keyword: str) -> str:
+    """Convert a DICOM keyword to a (gggg,eeee) tag string."""
+    tag_int = pydicom.datadict.tag_for_keyword(keyword) or 0
+    return f"({tag_int >> 16:04X},{tag_int & 0xFFFF:04X})"
 
 
 def test_deidentify_files(tmp_path: Path) -> None:  # noqa
     deidentifier = DicomDeidentifier(
-        procedure=procedure_factory(
-            tag_actions={
-                "PatientName": ActionKind.REMOVE,
-                "Modality": ActionKind.KEEP,
+        procedure={
+            "sopClass": {
+                TEST_SOP_CLASS: {
+                    "tags": {
+                        tag("PatientName"): {"default": ActionKind.REMOVE},
+                        tag("Modality"): {"default": ActionKind.KEEP},
+                    },
+                }
             },
-        )
+        }
     )
 
     original = RESOURCES_PATH / "ct_minimal.dcm"
@@ -76,114 +58,231 @@ def test_deidentify_files(tmp_path: Path) -> None:  # noqa
 
 
 @pytest.mark.parametrize(
-    "dicom_sop_class, procedure_sop_class, default, context",
+    "dicom_sop_class, procedure, context",
     (
-        (
-            "1.2.840.10008.5.1.4.1.1.4",
-            "1.2.840.10008.5.1.4.1.1.4",
-            ActionKind.KEEP,
+        (  # Sanity: regular match
+            TEST_SOP_CLASS,
+            {
+                "sopClass": {
+                    TEST_SOP_CLASS: {"tags": {}},
+                },
+                "default": ActionKind.KEEP,
+            },
             nullcontext(),
         ),
-        (
-            "1.2.840.10008.5.1.4.1.1.4",
-            "1.2.840.10008.5.1.4.1.1.4",
-            ActionKind.REJECT,
+        (  # Sanity: regular match REJECT behaviour
+            TEST_SOP_CLASS,
+            {
+                "sopClass": {
+                    TEST_SOP_CLASS: {"tags": {}},
+                },
+                "default": ActionKind.REJECT,
+            },
             nullcontext(),
         ),
-        (
-            "1.2.840.10008.5.1.4.1.1.4",
-            "1.2.840.10008.5.1.4.1.1.128",
-            ActionKind.KEEP,
+        (  # Default is: regular match REJECT behaviour
+            TEST_SOP_CLASS,
+            {
+                "sopClass": {
+                    TEST_SOP_CLASS: {"tags": {}},
+                },
+                "default": ActionKind.REJECT,
+            },
             nullcontext(),
         ),
-        (
-            "1.2.840.10008.5.1.4.1.1.4",
-            "1.2.840.10008.5.1.4.1.1.128",
-            ActionKind.REJECT,
+        (  # No SOP Class match: KEEP via default
+            TEST_SOP_CLASS,
+            {
+                "sopClass": {
+                    "1.2.840.10008.5.1.4.1.1.128": {"tags": {}},
+                },
+                "default": ActionKind.KEEP,
+            },
+            nullcontext(),
+        ),
+        (  # No SOP Class match: REJECT
+            TEST_SOP_CLASS,
+            {
+                "sopClass": {
+                    "1.2.840.10008.5.1.4.1.1.128": {"tags": {}},
+                },
+                "default": ActionKind.REJECT,
+                "justification": "TEST default justification",
+            },
+            pytest.raises(
+                RejectedDICOMFileError, match="TEST default justification"
+            ),
+        ),
+        (  # No SOP Class match: REJECT even if no default is specified
+            TEST_SOP_CLASS,
+            {
+                "sopClass": {
+                    "1.2.840.10008.5.1.4.1.1.128": {"tags": {}},
+                },
+            },
             pytest.raises(RejectedDICOMFileError),
         ),
-        (
-            "1.2.840.10008.5.1.4.1.1.4",
-            "1.2.840.10008.5.1.4.1.1.128",
-            "NOT_A_VALID_ACTION",
+        (  # No SOP Class match: REJECT, no justification
+            TEST_SOP_CLASS,
+            {
+                "sopClass": {
+                    "1.2.840.10008.5.1.4.1.1.128": {"tags": {}},
+                },
+                "default": ActionKind.REJECT,
+            },
+            pytest.raises(
+                RejectedDICOMFileError,
+                match="is not supported",
+            ),
+        ),
+        (  # No SOP Class match: invalid action
+            TEST_SOP_CLASS,
+            {
+                "sopClass": {
+                    "1.2.840.10008.5.1.4.1.1.128": {"tags": {}},
+                },
+                "default": "NOT_A_VALID_ACTION",
+            },
             pytest.raises(NotImplementedError),
         ),
     ),
 )
 def test_sop_class_handling(  # noqa
     dicom_sop_class: str,
-    procedure_sop_class: str,
-    default: ActionKind,
+    procedure: Dict[str, Any],
     context: Any,
 ) -> None:
-    # Create a minimal DICOM dataset with a SOPClassUID
     ds = Dataset()
     ds.SOPClassUID = dicom_sop_class
 
-    deidentifier = DicomDeidentifier(
-        procedure=procedure_factory(
-            tag_actions={},
-            sop_class=procedure_sop_class,
-            sop_default=default,
-        )
-    )
+    deidentifier = DicomDeidentifier(procedure=procedure)
 
     with context:
         deidentifier.deidentify_dataset(ds)
 
 
 @pytest.mark.parametrize(
-    "procedure_tag_actions, default, context",
+    "procedure, context",
     (
         (
-            {"PatientName": ActionKind.KEEP},
-            ActionKind.KEEP,
+            {  # Sanity: regular KEEP
+                "sopClass": {
+                    TEST_SOP_CLASS: {
+                        "tags": {
+                            tag("PatientName"): {"default": ActionKind.KEEP}
+                        },
+                    }
+                },
+            },
             nullcontext(),
         ),
-        (
-            {},
-            ActionKind.KEEP,
+        (  # Sanity: regular KEEP, via defaults
+            {
+                "sopClass": {
+                    TEST_SOP_CLASS: {
+                        "tags": {},
+                        "default": ActionKind.KEEP,
+                    }
+                },
+            },
             nullcontext(),
         ),
-        (
-            {"PatientName": "NOT_A_VALID_ACTION"},
-            ActionKind.KEEP,
+        (  # Unsupported action
+            {
+                "sopClass": {
+                    TEST_SOP_CLASS: {
+                        "tags": {
+                            tag("PatientName"): {
+                                "default": "NOT_A_VALID_ACTION"
+                            }
+                        },
+                    }
+                },
+            },
             pytest.raises(NotImplementedError),
         ),
-        (
-            {},
-            "NOT_A_VALID_ACTION",
+        (  # Unsupported action, via defaults
+            {
+                "sopClass": {
+                    TEST_SOP_CLASS: {
+                        "tags": {},
+                        "default": "NOT_A_VALID_ACTION",
+                    },
+                }
+            },
             pytest.raises(NotImplementedError),
         ),
-        (
-            {"PatientName": ActionKind.REJECT},
-            ActionKind.REJECT,
-            pytest.raises(RejectedDICOMFileError),
+        (  # Rejection via tag action
+            {
+                "sopClass": {
+                    TEST_SOP_CLASS: {
+                        "tags": {
+                            tag("PatientName"): {
+                                "default": ActionKind.REJECT,
+                                "justification": "TEST tag-specific rejection",
+                            }
+                        },
+                    }
+                },
+            },
+            pytest.raises(
+                RejectedDICOMFileError, match="TEST tag-specific rejection"
+            ),
         ),
-        (
-            {},
-            ActionKind.REJECT,
-            pytest.raises(RejectedDICOMFileError),
+        (  # Rejection via tag action, no justification
+            {
+                "sopClass": {
+                    TEST_SOP_CLASS: {
+                        "tags": {
+                            tag("PatientName"): {
+                                "default": ActionKind.REJECT,
+                            }
+                        },
+                    }
+                },
+            },
+            pytest.raises(
+                RejectedDICOMFileError, match="no justification provided"
+            ),
+        ),
+        (  # Rejection via defaults
+            {
+                "sopClass": {
+                    TEST_SOP_CLASS: {
+                        "tags": {},
+                        "default": ActionKind.REJECT,
+                        "justification": "TEST default rejection",
+                    }
+                },
+            },
+            pytest.raises(
+                RejectedDICOMFileError, match="TEST default rejection"
+            ),
+        ),
+        (  # Rejection via defaults, no justification
+            {
+                "sopClass": {
+                    TEST_SOP_CLASS: {
+                        "tags": {},
+                        "default": ActionKind.REJECT,
+                    }
+                },
+            },
+            pytest.raises(
+                RejectedDICOMFileError, match="no justification provided"
+            ),
         ),
     ),
 )
 def test_action_handling(  # noqa
-    procedure_tag_actions: Dict[str, ActionKind | str],
-    default: ActionKind | str,
+    procedure: Dict[str, Any],
     context: Any,
 ) -> None:
-    # Create a minimal DICOM dataset with a SOPClassUID
     ds = Dataset()
-    ds.SOPClassUID = CT_IMAGE_SOP
+    ds.SOPClassUID = TEST_SOP_CLASS
     ds.PatientName = "Test^Patient"
 
-    deidentifier = DicomDeidentifier(
-        procedure=procedure_factory(
-            tag_actions=procedure_tag_actions,  # type: ignore
-            sop_class=CT_IMAGE_SOP,
-            tag_default=default,  # type: ignore
-        )
-    )
+    deidentifier = DicomDeidentifier(procedure=procedure)
 
     with context:
         deidentifier.deidentify_dataset(ds)
@@ -192,15 +291,19 @@ def test_action_handling(  # noqa
 def test_keep_action() -> None:  # noqa
     # Create a minimal DICOM dataset with a SOPClassUID
     ds = Dataset()
-    ds.SOPClassUID = CT_IMAGE_SOP
+    ds.SOPClassUID = TEST_SOP_CLASS
     ds.PatientName = "Test^Patient"
 
     deidentifier = DicomDeidentifier(
-        procedure=procedure_factory(
-            tag_actions={"PatientName": ActionKind.KEEP},
-            sop_class=CT_IMAGE_SOP,
-            tag_default=ActionKind.KEEP,
-        )
+        procedure={
+            "sopClass": {
+                TEST_SOP_CLASS: {
+                    "tags": {
+                        tag("PatientName"): {"default": ActionKind.KEEP},
+                    },
+                }
+            },
+        }
     )
 
     assert ds.PatientName == "Test^Patient"
@@ -210,14 +313,19 @@ def test_keep_action() -> None:  # noqa
 
 def test_remove_action() -> None:  # noqa
     ds = Dataset()
-    ds.SOPClassUID = CT_IMAGE_SOP
+    ds.SOPClassUID = TEST_SOP_CLASS
     ds.PatientName = "Test^Patient"
 
     deidentifier = DicomDeidentifier(
-        procedure=procedure_factory(
-            tag_actions={"PatientName": ActionKind.REMOVE},
-            sop_class=CT_IMAGE_SOP,
-        )
+        procedure={
+            "sopClass": {
+                TEST_SOP_CLASS: {
+                    "tags": {
+                        tag("PatientName"): {"default": ActionKind.REMOVE},
+                    },
+                }
+            },
+        }
     )
 
     assert ds.PatientName == "Test^Patient"
@@ -227,15 +335,19 @@ def test_remove_action() -> None:  # noqa
 
 def test_reject_action() -> None:  # noqa
     ds = Dataset()
-    ds.SOPClassUID = CT_IMAGE_SOP
+    ds.SOPClassUID = TEST_SOP_CLASS
     ds.PatientName = "Test^Patient"
 
     deidentifier = DicomDeidentifier(
-        procedure=procedure_factory(
-            tag_actions={"PatientName": ActionKind.KEEP},
-            sop_class=CT_IMAGE_SOP,
-            tag_default=ActionKind.REJECT,
-        )
+        procedure={
+            "sopClass": {
+                TEST_SOP_CLASS: {
+                    "tags": {
+                        tag("PatientName"): {"default": ActionKind.REJECT},
+                    },
+                }
+            },
+        }
     )
 
     assert ds.PatientName == "Test^Patient"
@@ -247,7 +359,7 @@ def test_uid_action() -> None:  # noqa
 
     def gen_dataset() -> Dataset:
         ds = Dataset()
-        ds.SOPClassUID = CT_IMAGE_SOP
+        ds.SOPClassUID = TEST_SOP_CLASS
         ds.PatientName = "Test^Patient"
         ds.Modality = "CT"
         return ds
@@ -257,15 +369,18 @@ def test_uid_action() -> None:  # noqa
     ds_partial_same = gen_dataset()
     ds_partial_same.Modality = "MT"  # Different modality
 
-    procedure = procedure_factory(
-        tag_actions={
-            "PatientName": ActionKind.UID,
-            "Modality": ActionKind.UID,
-        },
-        sop_class=CT_IMAGE_SOP,
+    deidentifier = DicomDeidentifier(
+        procedure={
+            "sopClass": {
+                TEST_SOP_CLASS: {
+                    "tags": {
+                        tag("PatientName"): {"default": ActionKind.UID},
+                        tag("Modality"): {"default": ActionKind.UID},
+                    },
+                }
+            },
+        }
     )
-
-    deidentifier = DicomDeidentifier(procedure=procedure)
 
     # First pass
     deidentifier.deidentify_dataset(ds)
@@ -282,8 +397,8 @@ def test_uid_action() -> None:  # noqa
     assert ds_partial_same.PatientName == ds.PatientName
     assert ds_partial_same.Modality != ds.Modality
 
-    # New DeIdentifier should lead to different UIDs
-    another_deidentifier = DicomDeidentifier(procedure=procedure)
+    # New Deidentifier should lead to different UIDs
+    another_deidentifier = DicomDeidentifier(procedure=deidentifier.procedure)
     new_ds = gen_dataset()
 
     another_deidentifier.deidentify_dataset(new_ds)
