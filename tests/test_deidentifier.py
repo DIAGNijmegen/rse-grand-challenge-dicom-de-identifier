@@ -1,11 +1,19 @@
+# mypy: disallow-untyped-decorators=False
+
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any, Dict
 
 import pydicom
+import pytest
+from pydicom.dataset import Dataset
 
 from grand_challenge_dicom_de_identifier.deidentifier import (
     ActionKind,
     DeIdentifier,
+)
+from grand_challenge_dicom_de_identifier.exceptions import (
+    RejectedDICOMFileError,
 )
 from tests import RESOURCES_PATH
 
@@ -15,7 +23,7 @@ CT_IMAGE_SOP = "1.2.840.10008.5.1.4.1.1.2"
 def procedure_factory(
     tag_actions: Dict[str, ActionKind],
     sop_class: str = CT_IMAGE_SOP,
-    sop_default: ActionKind = ActionKind.REMOVE,
+    sop_default: ActionKind = ActionKind.REJECT,
     tag_default: ActionKind = ActionKind.REMOVE,
 ) -> Dict[str, Any]:
     """Build a procedure for a single SOP class."""
@@ -65,3 +73,60 @@ def test_deidentify_files(tmp_path: Path) -> None:  # noqa
     processed_ds = pydicom.dcmread(anonmynized)
     assert not getattr(processed_ds, "PatientName", None)  # Should be removed
     assert getattr(processed_ds, "Modality", None) == "CT"  # Should be kept
+
+
+@pytest.mark.parametrize(
+    "dicom_sop_class, procedure_sop_class, default, context",
+    (
+        (
+            "1.2.840.10008.5.1.4.1.1.4",
+            "1.2.840.10008.5.1.4.1.1.4",
+            ActionKind.KEEP,
+            nullcontext(),
+        ),
+        (
+            "1.2.840.10008.5.1.4.1.1.4",
+            "1.2.840.10008.5.1.4.1.1.4",
+            ActionKind.REJECT,
+            nullcontext(),
+        ),
+        (
+            "1.2.840.10008.5.1.4.1.1.4",
+            "1.2.840.10008.5.1.4.1.1.128",
+            ActionKind.KEEP,
+            nullcontext(),
+        ),
+        (
+            "1.2.840.10008.5.1.4.1.1.4",
+            "1.2.840.10008.5.1.4.1.1.128",
+            ActionKind.REJECT,
+            pytest.raises(RejectedDICOMFileError),
+        ),
+        (
+            "1.2.840.10008.5.1.4.1.1.4",
+            "1.2.840.10008.5.1.4.1.1.128",
+            "NOT_A_VALID_ACTION",
+            pytest.raises(NotImplementedError),
+        ),
+    ),
+)
+def test_sop_class_handling(  # noqa
+    dicom_sop_class: str,
+    procedure_sop_class: str,
+    default: ActionKind,
+    context: Any,
+) -> None:
+    # Create a minimal DICOM dataset with unsupported SOPClassUID
+    ds = Dataset()
+    ds.SOPClassUID = dicom_sop_class
+
+    deidentifier = DeIdentifier(
+        procedure=procedure_factory(
+            tag_actions={},
+            sop_class=procedure_sop_class,
+            sop_default=default,
+        )
+    )
+
+    with context:
+        deidentifier.process_dataset(ds)

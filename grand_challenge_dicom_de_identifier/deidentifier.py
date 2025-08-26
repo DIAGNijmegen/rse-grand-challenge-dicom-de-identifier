@@ -64,7 +64,7 @@ class DeIdentifier:
             if default == ActionKind.REJECT:
                 raise RejectedDICOMFileError() from None
             elif default == ActionKind.KEEP:
-                sop_procedure = {"default": ActionKind.KEEP}
+                sop_procedure = {"default": ActionKind.KEEP, "tags": {}}
             else:
                 raise NotImplementedError(
                     f"Default action {default} not implemented"
