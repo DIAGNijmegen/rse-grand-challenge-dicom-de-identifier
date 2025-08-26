@@ -10,7 +10,7 @@ from pydicom.dataset import Dataset
 
 from grand_challenge_dicom_de_identifier.deidentifier import (
     ActionKind,
-    DeIdentifier,
+    DicomDeidentifier,
 )
 from grand_challenge_dicom_de_identifier.exceptions import (
     RejectedDICOMFileError,
@@ -47,7 +47,7 @@ def procedure_factory(
 
 
 def test_deidentify_files(tmp_path: Path) -> None:  # noqa
-    deidentifier = DeIdentifier(
+    deidentifier = DicomDeidentifier(
         procedure=procedure_factory(
             tag_actions={
                 "PatientName": ActionKind.REMOVE,
@@ -59,7 +59,7 @@ def test_deidentify_files(tmp_path: Path) -> None:  # noqa
     original = RESOURCES_PATH / "ct_minimal.dcm"
     anonmynized = tmp_path / "ct_minimal_anonymized.dcm"
 
-    deidentifier.process_file(
+    deidentifier.deidentify_file(
         original,
         output=anonmynized,
     )
@@ -120,7 +120,7 @@ def test_sop_class_handling(  # noqa
     ds = Dataset()
     ds.SOPClassUID = dicom_sop_class
 
-    deidentifier = DeIdentifier(
+    deidentifier = DicomDeidentifier(
         procedure=procedure_factory(
             tag_actions={},
             sop_class=procedure_sop_class,
@@ -129,7 +129,7 @@ def test_sop_class_handling(  # noqa
     )
 
     with context:
-        deidentifier.process_dataset(ds)
+        deidentifier.deidentify_dataset(ds)
 
 
 @pytest.mark.parametrize(
@@ -177,7 +177,7 @@ def test_action_handling(  # noqa
     ds.SOPClassUID = CT_IMAGE_SOP
     ds.PatientName = "Test^Patient"
 
-    deidentifier = DeIdentifier(
+    deidentifier = DicomDeidentifier(
         procedure=procedure_factory(
             tag_actions=procedure_tag_actions,  # type: ignore
             sop_class=CT_IMAGE_SOP,
@@ -186,4 +186,106 @@ def test_action_handling(  # noqa
     )
 
     with context:
-        deidentifier.process_dataset(ds)
+        deidentifier.deidentify_dataset(ds)
+
+
+def test_keep_action() -> None:  # noqa
+    # Create a minimal DICOM dataset with a SOPClassUID
+    ds = Dataset()
+    ds.SOPClassUID = CT_IMAGE_SOP
+    ds.PatientName = "Test^Patient"
+
+    deidentifier = DicomDeidentifier(
+        procedure=procedure_factory(
+            tag_actions={"PatientName": ActionKind.KEEP},
+            sop_class=CT_IMAGE_SOP,
+            tag_default=ActionKind.KEEP,
+        )
+    )
+
+    assert ds.PatientName == "Test^Patient"
+    deidentifier.deidentify_dataset(ds)
+    assert ds.PatientName == "Test^Patient"
+
+
+def test_remove_action() -> None:  # noqa
+    ds = Dataset()
+    ds.SOPClassUID = CT_IMAGE_SOP
+    ds.PatientName = "Test^Patient"
+
+    deidentifier = DicomDeidentifier(
+        procedure=procedure_factory(
+            tag_actions={"PatientName": ActionKind.REMOVE},
+            sop_class=CT_IMAGE_SOP,
+        )
+    )
+
+    assert ds.PatientName == "Test^Patient"
+    deidentifier.deidentify_dataset(ds)
+    assert getattr(ds, "PatientName", None) is None
+
+
+def test_reject_action() -> None:  # noqa
+    ds = Dataset()
+    ds.SOPClassUID = CT_IMAGE_SOP
+    ds.PatientName = "Test^Patient"
+
+    deidentifier = DicomDeidentifier(
+        procedure=procedure_factory(
+            tag_actions={"PatientName": ActionKind.KEEP},
+            sop_class=CT_IMAGE_SOP,
+            tag_default=ActionKind.REJECT,
+        )
+    )
+
+    assert ds.PatientName == "Test^Patient"
+    with pytest.raises(RejectedDICOMFileError):
+        deidentifier.deidentify_dataset(ds)
+
+
+def test_uid_action() -> None:  # noqa
+
+    def gen_dataset() -> Dataset:
+        ds = Dataset()
+        ds.SOPClassUID = CT_IMAGE_SOP
+        ds.PatientName = "Test^Patient"
+        ds.Modality = "CT"
+        return ds
+
+    ds = gen_dataset()
+    ds_same = gen_dataset()
+    ds_partial_same = gen_dataset()
+    ds_partial_same.Modality = "MT"  # Different modality
+
+    procedure = procedure_factory(
+        tag_actions={
+            "PatientName": ActionKind.UID,
+            "Modality": ActionKind.UID,
+        },
+        sop_class=CT_IMAGE_SOP,
+    )
+
+    deidentifier = DicomDeidentifier(procedure=procedure)
+
+    # First pass
+    deidentifier.deidentify_dataset(ds)
+    assert ds.PatientName != "Test^Patient"
+    assert ds.Modality != "CT"
+
+    # Should be stable for the same values
+    deidentifier.deidentify_dataset(ds_same)
+    assert ds_same.PatientName == ds.PatientName
+    assert ds_same.Modality == ds.Modality
+
+    # Mixed values should lead to partially different UIDs
+    deidentifier.deidentify_dataset(ds_partial_same)
+    assert ds_partial_same.PatientName == ds.PatientName
+    assert ds_partial_same.Modality != ds.Modality
+
+    # New DeIdentifier should lead to different UIDs
+    another_deidentifier = DicomDeidentifier(procedure=procedure)
+    new_ds = gen_dataset()
+
+    another_deidentifier.deidentify_dataset(new_ds)
+    assert new_ds.PatientName != ds.PatientName
+    assert new_ds.Modality != ds.Modality

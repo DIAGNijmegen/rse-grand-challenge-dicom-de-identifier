@@ -1,4 +1,5 @@
 import os
+from collections import defaultdict
 from enum import Enum
 from functools import partial
 from typing import Any, AnyStr, BinaryIO, Dict
@@ -26,14 +27,36 @@ class ActionKind(str, Enum):
     REJECT = "R"
 
 
-class DeIdentifier:
-    """A class to handle DICOM de-identification based on a DE-ID procedure."""
+# Requested via http://www.medicalconnections.co.uk/
+GRAND_CHALLENGE_ROOT_UID: str = "1.2.826.0.1.3680043.10.1666."
+
+
+class DicomDeidentifier:
+    """
+
+    A class to handle DICOM de-identification based on a de-identifaction procedure.
+
+    Example of a procedure:
+    {
+        "default": "R",  # Default action for unknown SOP Classes
+        "version": "2024a",  # Version of the procedure
+        "sopClass": {
+            "1.2.840.10008.xx": {  # SOP Class UID
+                "default": "X",  # Default action for unknown tags
+                "tags": {
+                    "(0010,0010)": {"default": "X"},  # PatientName
+                    "(0008,0060)": {"default": "K"},  # Modality
+                    "(0008,0016)": {"default": "K"},  # SOPClassUID
+            }
+    }
+
+    """
 
     def __init__(
         self,
         procedure: None | Dict[str, Any] = None,
     ) -> None:
-        """Initialize the DeIdentifier.
+        """Initialize the DicomDeidentifier.
 
         Parameters
         ----------
@@ -41,9 +64,13 @@ class DeIdentifier:
             De-identification procedure to apply, by default the
             grand-challenge procedure is used.
         """
-        self.procedure = procedure or {}
+        self.procedure: Dict[str, Any] = procedure or {}
 
-    def process_file(
+        self.uid_map: Dict[str, pydicom.uid.UID] = defaultdict(
+            lambda: pydicom.uid.generate_uid(prefix=GRAND_CHALLENGE_ROOT_UID)
+        )
+
+    def deidentify_file(
         self,
         /,
         file: PathType | BinaryIO | ReadableBuffer,
@@ -52,10 +79,10 @@ class DeIdentifier:
     ) -> None:
         """Process a DICOM file and save the de-identified result in output."""
         with pydicom.dcmread(fp=file, force=True) as dataset:
-            self.process_dataset(dataset)
+            self.deidentify_dataset(dataset)
             dataset.save_as(output)
 
-    def process_dataset(self, dataset: pydicom.Dataset) -> None:
+    def deidentify_dataset(self, dataset: pydicom.Dataset) -> None:
         """Process a DICOM dataset in place."""
         try:
             sop_procedure = self.procedure["sopClass"][dataset.SOPClassUID]
@@ -72,13 +99,13 @@ class DeIdentifier:
 
         dataset.walk(
             partial(
-                self.__process_element,
+                self._handle_element,
                 default_action=sop_procedure["default"],
                 action_lookup=sop_procedure["tags"],
             )
         )
 
-    def __process_element(
+    def _handle_element(
         self,
         dataset: Dataset,
         elem: DataElement,
@@ -98,5 +125,7 @@ class DeIdentifier:
             pass
         elif action == ActionKind.REJECT:
             raise RejectedDICOMFileError() from None
+        elif action == ActionKind.UID:
+            elem.value = self.uid_map[elem.value]
         else:
             raise NotImplementedError(f"Action {action} not implemented")
