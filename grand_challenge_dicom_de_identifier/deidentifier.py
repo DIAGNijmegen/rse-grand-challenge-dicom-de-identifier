@@ -96,5 +96,7 @@ class DeIdentifier:
             del dataset[elem.tag]
         elif action == ActionKind.KEEP:
             pass
+        elif action == ActionKind.REJECT:
+            raise RejectedDICOMFileError() from None
         else:
             raise NotImplementedError(f"Action {action} not implemented")

@@ -116,7 +116,7 @@ def test_sop_class_handling(  # noqa
     default: ActionKind,
     context: Any,
 ) -> None:
-    # Create a minimal DICOM dataset with unsupported SOPClassUID
+    # Create a minimal DICOM dataset with a SOPClassUID
     ds = Dataset()
     ds.SOPClassUID = dicom_sop_class
 
@@ -125,6 +125,63 @@ def test_sop_class_handling(  # noqa
             tag_actions={},
             sop_class=procedure_sop_class,
             sop_default=default,
+        )
+    )
+
+    with context:
+        deidentifier.process_dataset(ds)
+
+
+@pytest.mark.parametrize(
+    "procedure_tag_actions, default, context",
+    (
+        (
+            {"PatientName": ActionKind.KEEP},
+            ActionKind.KEEP,
+            nullcontext(),
+        ),
+        (
+            {},
+            ActionKind.KEEP,
+            nullcontext(),
+        ),
+        (
+            {"PatientName": "NOT_A_VALID_ACTION"},
+            ActionKind.KEEP,
+            pytest.raises(NotImplementedError),
+        ),
+        (
+            {},
+            "NOT_A_VALID_ACTION",
+            pytest.raises(NotImplementedError),
+        ),
+        (
+            {"PatientName": ActionKind.REJECT},
+            ActionKind.REJECT,
+            pytest.raises(RejectedDICOMFileError),
+        ),
+        (
+            {},
+            ActionKind.REJECT,
+            pytest.raises(RejectedDICOMFileError),
+        ),
+    ),
+)
+def test_action_handling(  # noqa
+    procedure_tag_actions: Dict[str, ActionKind | str],
+    default: ActionKind | str,
+    context: Any,
+) -> None:
+    # Create a minimal DICOM dataset with a SOPClassUID
+    ds = Dataset()
+    ds.SOPClassUID = CT_IMAGE_SOP
+    ds.PatientName = "Test^Patient"
+
+    deidentifier = DeIdentifier(
+        procedure=procedure_factory(
+            tag_actions=procedure_tag_actions,  # type: ignore
+            sop_class=CT_IMAGE_SOP,
+            tag_default=default,  # type: ignore
         )
     )
 
