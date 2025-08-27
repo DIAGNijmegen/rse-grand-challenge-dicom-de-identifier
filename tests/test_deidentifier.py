@@ -423,3 +423,42 @@ def test_fallback_default_action() -> None:  # noqa
     assert (
         getattr(ds, "PatientName", None) is None
     ), "Default action should be REMOVE"
+
+
+def test_deidentification_method_tag() -> None:  # noqa
+    ds = Dataset()
+    ds.SOPClassUID = TEST_SOP_CLASS
+
+    deidentifier = DicomDeidentifier(
+        procedure={  # Note: no default action has been specified
+            "version": "test-procedure",
+            "sopClass": {
+                TEST_SOP_CLASS: {
+                    "tags": {  # Required to ensure a double pass succeeds
+                        tag("SOPClassUID"): {
+                            "default": ActionKind.KEEP,
+                        },
+                        tag("DeidentificationMethod"): {
+                            "default": ActionKind.KEEP
+                        },
+                    },
+                }
+            },
+        }
+    )
+
+    assert "DeidentificationMethod" not in ds, "Sanity"
+    deidentifier.deidentify_dataset(ds)
+    assert (
+        "De-identified by Python DICOM de-identifier using procedure"
+        in getattr(ds, "DeidentificationMethod", "")
+    )
+
+    # Doing it twice ammends it
+    methods = getattr(ds, "DeidentificationMethod", "").split(";")
+    assert len(methods) == 1
+
+    deidentifier.deidentify_dataset(ds)
+
+    methods = getattr(ds, "DeidentificationMethod", "").split(";")
+    assert len(methods) == 2

@@ -1,5 +1,6 @@
 import os
 from collections import defaultdict
+from datetime import datetime
 from functools import partial
 from typing import Any, AnyStr, BinaryIO, Dict
 
@@ -88,6 +89,8 @@ class DicomDeidentifier:
             )
         )
 
+        self.set_deidentification_method_tag(dataset)
+
     def _get_sop_class_procedure(self, dataset: Dataset) -> Any:
         try:
             sop_procedure = self.procedure["sopClass"][dataset.SOPClassUID]
@@ -135,3 +138,30 @@ class DicomDeidentifier:
             elem.value = self.uid_map[elem.value]
         else:
             raise NotImplementedError(f"Action {action} not implemented")
+
+    def set_deidentification_method_tag(self, dataset: Dataset) -> None:
+        """
+        Add or update the de-identification method tag.
+
+        Args:
+            dataset: DICOM dataset to modify
+        """
+        version = self.procedure.get("version", "unknown")
+        timestamp = datetime.now().isoformat()
+        method = (
+            f"De-identified by Python DICOM de-identifier using procedure "
+            f"version {version} on {timestamp}."
+        )
+
+        existing_method = dataset.get("DeidentificationMethod", "")
+        if existing_method:
+            new_method = f"{existing_method}; {method}"
+        else:
+            new_method = method
+
+        # DICOM tag (0012,0063) - De-identification Method
+        dataset.add_new(
+            tag=pydicom.tag.Tag(0x0012, 0x0063),
+            VR="LO",
+            value=new_method,
+        )
