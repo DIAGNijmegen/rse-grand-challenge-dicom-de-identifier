@@ -5,7 +5,7 @@ on:
     types: [published]
 
 env:
-  MINIMUM_PYTHON_VERSION: '3.9'
+  MINIMUM_PYTHON_VERSION: '3.10'
 
 jobs:
   ci:

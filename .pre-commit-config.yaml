@@ -27,3 +27,10 @@ repos:
           - flake8-docstrings
           - mccabe
           - yesqa
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.8.0
+    hooks:
+      - id: mypy
+        additional_dependencies:
+          - types-pydicom
+        files: ^src/|^tests/
