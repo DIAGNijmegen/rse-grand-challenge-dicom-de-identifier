@@ -25,7 +25,7 @@ VR_DUMMY_VALUES: Dict[str, Any] = {
     # Age String - 4 characters (nnnD, nnnW, nnnM, nnnY), here 30 years
     "AS": "030Y",
     # Attribute Tag - 4 bytes as hex pairs (0000,0000)
-    "AT": (0x0000, 0x0000),
+    "AT": b"\x00\x00\x00\x00",
     # Code String - up to 16 characters, uppercase
     "CS": "DUMMY",
     # Date - YYYYMMDD format (January 1, 2000)
@@ -35,9 +35,9 @@ VR_DUMMY_VALUES: Dict[str, Any] = {
     # Date Time - YYYYMMDDHHMMSS.FFFFFF&ZZXX format
     "DT": "20000101120000.000000",
     # Floating Point Single - 4 bytes
-    "FL": struct.unpack("f", struct.pack("f", 0.0))[0],
+    "FL": 0.0,
     # Floating Point Double - 8 bytes
-    "FD": struct.unpack("d", struct.pack("d", 0.0))[0],
+    "FD": 0.0,
     # Integer String - integer as string, up to 12 chars
     "IS": "0",
     # Long String - up to 64 characters
@@ -61,15 +61,15 @@ VR_DUMMY_VALUES: Dict[str, Any] = {
     # Short String - up to 16 characters
     "SH": "DUMMY",
     # Signed Long - 32-bit signed integer
-    "SL": struct.unpack("i", struct.pack("i", 0))[0],
+    "SL": 0,
     # Sequence - sequence of items (empty)
     "SQ": [],
     # Signed Short - 16-bit signed integer
-    "SS": struct.unpack("h", struct.pack("h", 0))[0],
+    "SS": 0,
     # Short Text - up to 1024 characters
     "ST": "DUMMY SHORT TEXT",
     # Signed Very Long - 64-bit signed integer
-    "SV": struct.unpack("q", struct.pack("q", 0))[0],
+    "SV": 0,
     # Time - HHMMSS.FFFFFF format (12:00:00.000000)
     "TM": "120000.000000",
     # Unlimited Characters - unlimited length
@@ -77,17 +77,17 @@ VR_DUMMY_VALUES: Dict[str, Any] = {
     # Unique Identifier (UID format)
     "UI": "1.2.3.4.5.6.7.8.9.0.1.2.3.4.5.6.7.8.9.0",
     # Unsigned Long - 32-bit unsigned integer
-    "UL": struct.unpack("I", struct.pack("I", 0))[0],
+    "UL": 0,
     # Unknown - sequence of bytes (single zero byte buffer)
-    "UN": bytes([0x00]),
+    "UN": b"\x00",
     # Universal Resource Identifier/Locator - URI/URL
     "UR": "http://dummy.example.test",
     # Unsigned Short - 16-bit unsigned integer
-    "US": struct.unpack("H", struct.pack("H", 0))[0],
+    "US": 0,
     # Unlimited Text - unlimited length text
     "UT": "DUMMY UNLIMITED TEXT",
     # Unsigned Very Long - 64-bit unsigned integer
-    "UV": struct.unpack("Q", struct.pack("Q", 0))[0],
+    "UV": 0,
 }
 
 
