@@ -1,5 +1,6 @@
 # mypy: disallow-untyped-decorators=False
 
+import struct
 from contextlib import nullcontext
 from pathlib import Path
 from typing import Any, Dict
@@ -406,6 +407,35 @@ def test_uid_action() -> None:  # noqa
     assert new_ds.Modality != ds.Modality
 
 
+@pytest.mark.parametrize(
+    "action",
+    (
+        ActionKind.REPLACE,
+        ActionKind.REPLACE_0,
+    ),
+)
+def test_replace_action(action: ActionKind) -> None:  # noqa
+    ds = Dataset()
+    ds.SOPClassUID = TEST_SOP_CLASS
+    ds.PatientName = "Test^Patient"
+
+    deidentifier = DicomDeidentifier(
+        procedure={
+            "sopClass": {
+                TEST_SOP_CLASS: {
+                    "tags": {
+                        tag("PatientName"): {"default": action},
+                    },
+                }
+            },
+        }
+    )
+
+    assert ds.PatientName == "Test^Patient"
+    deidentifier.deidentify_dataset(ds)
+    assert ds.PatientName == "DUMMY^PATIENT^^^"
+
+
 def test_fallback_default_action() -> None:  # noqa
     """Test that missing default action leads to REMOVE being aplied."""
     ds = Dataset()
@@ -462,3 +492,54 @@ def test_deidentification_method_tag() -> None:  # noqa
 
     methods = getattr(ds, "DeidentificationMethod", "").split(";")
     assert len(methods) == 2
+
+
+@pytest.mark.parametrize(
+    "VR, expected",
+    (
+        ("AE", "DUMMY_AE"),
+        ("AS", "030Y"),
+        ("AT", (0x0000, 0x0000)),
+        ("CS", "DUMMY"),
+        ("DA", "20000101"),
+        ("DS", "0.0"),
+        ("DT", "20000101120000.000000"),
+        ("FL", struct.unpack("f", struct.pack("f", 0.0))[0]),
+        ("FD", struct.unpack("d", struct.pack("d", 0.0))[0]),
+        ("IS", "0"),
+        ("LO", "DUMMY_LONG_STRING"),
+        ("LT", "DUMMY LONG TEXT"),
+        ("OB", bytes([0x00])),
+        ("OD", struct.pack("d", 0.0)),
+        ("OF", struct.pack("f", 0.0)),
+        ("OL", struct.pack("I", 0x00000000)),
+        ("OV", struct.pack("Q", 0)),
+        ("OW", struct.pack("H", 0x0000)),
+        ("PN", "DUMMY^PATIENT^^^"),
+        ("SH", "DUMMY"),
+        ("SL", struct.unpack("i", struct.pack("i", 0))[0]),
+        ("SQ", []),
+        ("SS", struct.unpack("h", struct.pack("h", 0))[0]),
+        ("ST", "DUMMY SHORT TEXT"),
+        ("SV", struct.unpack("q", struct.pack("q", 0))[0]),
+        ("TM", "120000.000000"),
+        ("UC", "DUMMY UNLIMITED CHARACTERS"),
+        ("UI", "1.2.3.4.5.6.7.8.9.0.1.2.3.4.5.6.7.8.9.0"),
+        ("UL", struct.unpack("I", struct.pack("I", 0))[0]),
+        ("UN", bytes([0x00])),
+        ("UR", "http://dummy.example.test"),
+        ("US", struct.unpack("H", struct.pack("H", 0))[0]),
+        ("UT", "DUMMY UNLIMITED TEXT"),
+        ("UV", struct.unpack("Q", struct.pack("Q", 0))[0]),
+    ),
+)
+def test_dummy_values(VR: str, expected: Any) -> None:  # noqa
+    deidentifier = DicomDeidentifier(procedure={})
+    dummy = deidentifier._get_dummy_value(vr=VR)
+    assert dummy == expected, f"VR {VR} produced unexpected dummy value"
+
+
+def test_missing_dummy_value() -> None:  # noqa
+    deidentifier = DicomDeidentifier(procedure={})
+    with pytest.raises(NotImplementedError):
+        _ = deidentifier._get_dummy_value(vr="NOT_A_VALID_VR")
