@@ -209,7 +209,20 @@ class DicomDeidentifier:
         elif action == ActionKind.UID:
             elem.value = self.uid_map[elem.value]
         elif action in (ActionKind.REPLACE, ActionKind.REPLACE_0):
-            elem.value = self._get_dummy_value(vr=elem.VR)
+            if elem.VR == "SQ":  # Sequence
+                for sequence_item in elem.value:
+                    sequence_item.walk(
+                        partial(
+                            self._handle_element,
+                            action_lookup={},  # Always defer to the default
+                            default_action={
+                                "default": action,
+                                "justification": "Parent sequence was replaced",
+                            },
+                        )
+                    )
+            else:
+                elem.value = self._get_dummy_value(vr=elem.VR)
         else:
             raise NotImplementedError(f"Action {action} not implemented")
 

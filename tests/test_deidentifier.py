@@ -3,7 +3,7 @@
 import struct
 from contextlib import nullcontext
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import pydicom
 import pytest
@@ -543,3 +543,139 @@ def test_missing_dummy_value() -> None:  # noqa
     deidentifier = DicomDeidentifier(procedure={})
     with pytest.raises(NotImplementedError):
         _ = deidentifier._get_dummy_value(vr="NOT_A_VALID_VR")
+
+
+@pytest.mark.parametrize(
+    "action, expected_number",
+    (
+        (ActionKind.KEEP, 2),
+        (ActionKind.REPLACE, 2),
+        (ActionKind.REPLACE_0, 2),
+        (ActionKind.REMOVE, 0),
+    ),
+)
+def test_sequence_handling_remove_replace_keep(  # noqa
+    action: ActionKind, expected_number: int
+) -> None:
+    ds = Dataset()
+    ds.SOPClassUID = TEST_SOP_CLASS
+
+    # Create a sequence with two items
+    ds.ReferencedStudySequence = pydicom.sequence.Sequence(
+        [
+            Dataset(),
+            Dataset(),
+        ],
+    )
+    ds.ReferencedStudySequence[0].ReferencedSOPInstanceUID = "1.2.3"
+    ds.ReferencedStudySequence[1].ReferencedSOPInstanceUID = "4.5.6"
+
+    deidentifier = DicomDeidentifier(
+        procedure={
+            "sopClass": {
+                TEST_SOP_CLASS: {
+                    "tags": {
+                        tag("ReferencedStudySequence"): {"default": action},
+                        tag("ReferencedSOPInstanceUID"): {
+                            "default": ActionKind.KEEP
+                        },
+                    },
+                }
+            },
+        }
+    )
+    deidentifier.deidentify_dataset(ds)
+
+    sequence = getattr(ds, "ReferencedStudySequence", [])
+    assert len(sequence) == expected_number
+
+
+@pytest.mark.parametrize(
+    "action, expected_value",
+    (
+        (
+            ActionKind.KEEP,
+            "1.2.3",
+        ),
+        (
+            ActionKind.REPLACE,
+            "1.2.3.4.5.6.7.8.9.0.1.2.3.4.5.6.7.8.9.0",
+        ),
+        (
+            ActionKind.REMOVE,
+            None,
+        ),
+    ),
+)
+def test_within_sequence_tag_handling(  # noqa
+    action: ActionKind, expected_value: Optional[str]
+) -> None:
+    ds = Dataset()
+    ds.SOPClassUID = TEST_SOP_CLASS
+
+    # Create a sequence with two items
+    ds.ReferencedStudySequence = pydicom.sequence.Sequence([Dataset()])
+    ds.ReferencedStudySequence[0].ReferencedSOPInstanceUID = "1.2.3"
+
+    deidentifier = DicomDeidentifier(
+        procedure={
+            "sopClass": {
+                TEST_SOP_CLASS: {
+                    "tags": {
+                        tag("ReferencedStudySequence"): {
+                            "default": ActionKind.KEEP
+                        },
+                        tag("ReferencedSOPInstanceUID"): {
+                            "default": action,
+                        },
+                    },
+                }
+            },
+        }
+    )
+    deidentifier.deidentify_dataset(ds)
+
+    if expected_value is None:
+        assert not hasattr(
+            ds.ReferencedStudySequence[0], "ReferencedSOPInstanceUID"
+        )
+    else:
+        value = ds.ReferencedStudySequence[0].ReferencedSOPInstanceUID
+        assert value == expected_value
+
+
+def test_within_sequence_tag_handling_after_replace() -> None:  # noqa
+    ds = Dataset()
+    ds.SOPClassUID = TEST_SOP_CLASS
+
+    # Create a sequence with two items
+    ds.ReferencedStudySequence = pydicom.sequence.Sequence([Dataset()])
+    ds.ReferencedStudySequence[0].ReferencedSOPInstanceUID = "1.2.3"
+    ds.ReferencedStudySequence[0].ReferencedSOPClassUID = "3.4.5"
+
+    deidentifier = DicomDeidentifier(
+        procedure={
+            "sopClass": {
+                TEST_SOP_CLASS: {
+                    "tags": {
+                        tag("ReferencedStudySequence"): {
+                            "default": ActionKind.REPLACE
+                        },
+                        tag("ReferencedSOPInstanceUID"): {
+                            "default": ActionKind.REMOVE,
+                        },
+                    },
+                    "default": ActionKind.KEEP,
+                }
+            },
+        }
+    )
+    deidentifier.deidentify_dataset(ds)
+
+    # The sequence is REPLACEd but the inner tag is REMOVED
+    assert hasattr(ds, "ReferencedStudySequence")
+    value = ds.ReferencedStudySequence[0].ReferencedSOPClassUID
+    assert value == "1.2.3.4.5.6.7.8.9.0.1.2.3.4.5.6.7.8.9.0"  # Dummy value
+    assert not hasattr(
+        ds.ReferencedStudySequence[0], "ReferencedSOPInstanceUID"
+    )
