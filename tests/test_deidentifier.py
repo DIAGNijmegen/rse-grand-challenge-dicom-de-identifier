@@ -483,7 +483,7 @@ def test_patient_identity_removed_tag() -> None:  # noqa
     assert getattr(ds, "PatientIdentityRemoved", None) == "YES"
 
 
-def test_deidentification_method_tag() -> None:  # noqa
+def test_deidentification_method_code() -> None:  # noqa
     ds = Dataset()
     ds.SOPClassUID = TEST_SOP_CLASS
 
@@ -496,30 +496,30 @@ def test_deidentification_method_tag() -> None:  # noqa
                         tag("SOPClassUID"): {
                             "default": ActionKind.KEEP,
                         },
-                        tag("DeidentificationMethod"): {
+                        tag("DeidentificationMethodCodeSequence"): {
                             "default": ActionKind.KEEP
                         },
+                        tag("CodeMeaning"): {"default": ActionKind.KEEP},
+                        tag("LongCodeValue"): {"default": ActionKind.KEEP},
                     },
                 }
             },
         }
     )
 
-    assert "DeidentificationMethod" not in ds, "Sanity"
+    assert "DeidentificationMethodCodeSequence" not in ds, "Sanity"
     deidentifier.deidentify_dataset(ds)
+    sequence = getattr(ds, "DeidentificationMethodCodeSequence", [])
     assert (
         "De-identified by Python DICOM de-identifier using procedure"
-        in getattr(ds, "DeidentificationMethod", "")
+        in sequence[0].LongCodeValue
     )
 
     # Doing it twice ammends it
-    methods = getattr(ds, "DeidentificationMethod", "").split(";")
-    assert len(methods) == 1
-
+    assert len(sequence) == 1
     deidentifier.deidentify_dataset(ds)
-
-    methods = getattr(ds, "DeidentificationMethod", "").split(";")
-    assert len(methods) == 2
+    sequence = getattr(ds, "DeidentificationMethodCodeSequence", [])
+    assert len(sequence) == 2
 
 
 @pytest.mark.parametrize(

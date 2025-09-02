@@ -3,7 +3,7 @@ import struct
 from collections import defaultdict
 from datetime import datetime
 from functools import partial
-from typing import Any, AnyStr, BinaryIO, Dict
+from typing import Any, AnyStr, BinaryIO, Dict, cast
 
 import pydicom
 from pydicom import DataElement, Dataset
@@ -168,7 +168,7 @@ class DicomDeidentifier:
             )
         )
 
-        self.set_deidentification_method_tag(dataset)
+        self.set_deidentification_method_code(dataset)
         self.set_patient_identity_removed_tag(dataset)
 
     def set_patient_identity_removed_tag(self, dataset: Dataset) -> None:
@@ -253,7 +253,7 @@ class DicomDeidentifier:
             raise NotImplementedError(f"Unsupported DICOM VR: {vr}")
         return VR_DUMMY_VALUES[vr]
 
-    def set_deidentification_method_tag(self, dataset: Dataset) -> None:
+    def set_deidentification_method_code(self, dataset: Dataset) -> None:
         """
         Add or update the de-identification method tag.
 
@@ -262,20 +262,21 @@ class DicomDeidentifier:
         """
         version = self.procedure.get("version", "unknown")
         timestamp = datetime.now().isoformat()
-        method = (
+
+        # Ensure DeidentificationMethodCodeSequence exists and is a Sequence
+        if "DeidentificationMethodCodeSequence" in dataset:
+            method_seq = cast(
+                pydicom.sequence.Sequence,
+                dataset.DeidentificationMethodCodeSequence,
+            )
+        else:
+            method_seq = pydicom.sequence.Sequence()
+            dataset.DeidentificationMethodCodeSequence = method_seq
+
+        code = Dataset()
+        code.CodeMeaning = "Description of method"
+        code.LongCodeValue = (
             f"De-identified by Python DICOM de-identifier using procedure "
             f"version {version} on {timestamp}."
         )
-
-        existing_method = dataset.get("DeidentificationMethod", "")
-        if existing_method:
-            new_method = f"{existing_method}; {method}"
-        else:
-            new_method = method
-
-        # DICOM tag (0012,0063) - De-identification Method
-        dataset.add_new(
-            tag=pydicom.tag.Tag(0x0012, 0x0063),
-            VR="LO",
-            value=new_method,
-        )
+        method_seq.append(code)
