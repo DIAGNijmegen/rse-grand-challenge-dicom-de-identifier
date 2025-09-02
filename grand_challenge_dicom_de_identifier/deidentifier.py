@@ -138,9 +138,16 @@ class DicomDeidentifier:
         output: str | os.PathLike[AnyStr] | BinaryIO | WriteableBuffer,
     ) -> None:
         """Process a DICOM file and save the de-identified result in output."""
-        with pydicom.dcmread(fp=file, force=True) as dataset:
+        with pydicom.dcmread(
+            fp=file,
+            force=True,
+            defer_size=1024 * 2,  # Defer loading elements larger than 2KB
+        ) as dataset:
             self.deidentify_dataset(dataset)
-            dataset.save_as(output)
+            dataset.save_as(
+                output,
+                enforce_file_format=True,
+            )
 
     def deidentify_dataset(self, dataset: pydicom.Dataset) -> None:
         """Process a DICOM dataset in place."""
