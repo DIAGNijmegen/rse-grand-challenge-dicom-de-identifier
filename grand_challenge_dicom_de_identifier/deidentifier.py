@@ -6,6 +6,9 @@ from functools import partial
 from typing import Any, AnyStr, BinaryIO, Dict, cast
 
 import pydicom
+from grand_challenge_dicom_de_id_procedure import (
+    procedure as grand_challenge_procedure,
+)
 from pydicom import DataElement, Dataset
 from pydicom.filebase import ReadableBuffer, WriteableBuffer
 from pydicom.fileutil import PathType
@@ -103,7 +106,7 @@ class DicomDeidentifier:
         "sopClass": {
             "1.2.840.10008.xx": {  # SOP Class UID
                 "default": "X",  # Default action for unknown tags
-                "tags": {
+                "tag": {
                     "(0010,0010)": {"default": "X"},  # PatientName
                     "(0008,0060)": {"default": "K"},  # Modality
                     "(0008,0016)": {"default": "K"},  # SOPClassUID
@@ -124,7 +127,7 @@ class DicomDeidentifier:
             De-identification procedure to apply, by default the
             grand-challenge procedure is used.
         """
-        self.procedure: Dict[str, Any] = procedure or {}
+        self.procedure: Dict[str, Any] = procedure or grand_challenge_procedure
 
         self.uid_map: Dict[str, pydicom.uid.UID] = defaultdict(
             lambda: pydicom.uid.generate_uid(prefix=GRAND_CHALLENGE_ROOT_UID)
@@ -156,7 +159,7 @@ class DicomDeidentifier:
         dataset.walk(
             partial(
                 self._handle_element,
-                action_lookup=sop_class_procedure["tags"],
+                action_lookup=sop_class_procedure["tag"],
                 default_action={
                     "default": sop_class_procedure.get(
                         "default", ActionKind.REMOVE
@@ -198,7 +201,7 @@ class DicomDeidentifier:
                     )
                 ) from None
             elif default == ActionKind.KEEP:
-                sop_procedure = {"default": ActionKind.KEEP, "tags": {}}
+                sop_procedure = {"default": ActionKind.KEEP, "tag": {}}
             else:
                 raise NotImplementedError(
                     f"Default action {default} not implemented"
