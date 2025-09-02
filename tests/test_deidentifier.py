@@ -361,22 +361,22 @@ def test_uid_action() -> None:  # noqa
     def gen_dataset() -> Dataset:
         ds = Dataset()
         ds.SOPClassUID = TEST_SOP_CLASS
-        ds.PatientName = "Test^Patient"
-        ds.Modality = "CT"
+        ds.StudyInstanceUID = "1.2.3"
+        ds.SeriesInstanceUID = "3.4.5"
         return ds
 
     ds = gen_dataset()
     ds_same = gen_dataset()
     ds_partial_same = gen_dataset()
-    ds_partial_same.Modality = "MT"  # Different modality
+    ds_partial_same.SeriesInstanceUID = "6.7.8"  # Different UID
 
     deidentifier = DicomDeidentifier(
         procedure={
             "sopClass": {
                 TEST_SOP_CLASS: {
                     "tags": {
-                        tag("PatientName"): {"default": ActionKind.UID},
-                        tag("Modality"): {"default": ActionKind.UID},
+                        tag("StudyInstanceUID"): {"default": ActionKind.UID},
+                        tag("SeriesInstanceUID"): {"default": ActionKind.UID},
                     },
                 }
             },
@@ -385,26 +385,26 @@ def test_uid_action() -> None:  # noqa
 
     # First pass
     deidentifier.deidentify_dataset(ds)
-    assert ds.PatientName != "Test^Patient"
-    assert ds.Modality != "CT"
+    assert ds.StudyInstanceUID != "1.2.3"
+    assert ds.SeriesInstanceUID != "3.4.5"
 
     # Should be stable for the same values
     deidentifier.deidentify_dataset(ds_same)
-    assert ds_same.PatientName == ds.PatientName
-    assert ds_same.Modality == ds.Modality
+    assert ds_same.StudyInstanceUID == ds.StudyInstanceUID
+    assert ds_same.SeriesInstanceUID == ds.SeriesInstanceUID
 
     # Mixed values should lead to partially different UIDs
     deidentifier.deidentify_dataset(ds_partial_same)
-    assert ds_partial_same.PatientName == ds.PatientName
-    assert ds_partial_same.Modality != ds.Modality
+    assert ds_partial_same.StudyInstanceUID == ds.StudyInstanceUID
+    assert ds_partial_same.SeriesInstanceUID != ds.SeriesInstanceUID
 
     # New Deidentifier should lead to different UIDs
     another_deidentifier = DicomDeidentifier(procedure=deidentifier.procedure)
     new_ds = gen_dataset()
 
     another_deidentifier.deidentify_dataset(new_ds)
-    assert new_ds.PatientName != ds.PatientName
-    assert new_ds.Modality != ds.Modality
+    assert new_ds.StudyInstanceUID != ds.StudyInstanceUID
+    assert new_ds.SeriesInstanceUID != ds.SeriesInstanceUID
 
 
 @pytest.mark.parametrize(
