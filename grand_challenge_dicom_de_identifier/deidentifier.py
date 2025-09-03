@@ -1,4 +1,5 @@
 import os
+import struct
 from collections import defaultdict
 from datetime import datetime
 from functools import partial
@@ -17,6 +18,77 @@ from grand_challenge_dicom_de_identifier.typing import Action
 
 # Requested via http://www.medicalconnections.co.uk/
 GRAND_CHALLENGE_ROOT_UID: str = "1.2.826.0.1.3680043.10.1666."
+
+VR_DUMMY_VALUES: Dict[str, Any] = {
+    # Application Entity - up to 16 characters, no leading/trailing spaces
+    "AE": "DUMMY_AE",
+    # Age String - 4 characters (nnnD, nnnW, nnnM, nnnY), here 30 years
+    "AS": "030Y",
+    # Attribute Tag - 4 bytes as hex pairs (0000,0000)
+    "AT": b"\x00\x00\x00\x00",
+    # Code String - up to 16 characters, uppercase
+    "CS": "DUMMY",
+    # Date - YYYYMMDD format (January 1, 2000)
+    "DA": "20000101",
+    # Decimal String - floating point as string, up to 16 chars
+    "DS": "0.0",
+    # Date Time - YYYYMMDDHHMMSS.FFFFFF&ZZXX format
+    "DT": "20000101120000.000000",
+    # Floating Point Single - 4 bytes
+    "FL": 0.0,
+    # Floating Point Double - 8 bytes
+    "FD": 0.0,
+    # Integer String - integer as string, up to 12 chars
+    "IS": "0",
+    # Long String - up to 64 characters
+    "LO": "DUMMY_LONG_STRING",
+    # Long Text - up to 10240 characters
+    "LT": "DUMMY LONG TEXT",
+    # Other Byte - sequence of bytes (single zero byte)
+    "OB": bytes([0x00]),
+    # Other Double - sequence of 64-bit floating point values
+    "OD": struct.pack("d", 0.0),
+    # Other Float - sequence of 32-bit floating point values
+    "OF": struct.pack("f", 0.0),
+    # Other Long - sequence of 32-bit words
+    "OL": struct.pack("I", 0x00000000),
+    # Other Very Long - sequence of 64-bit words
+    "OV": struct.pack("Q", 0),
+    # Other Word - sequence of 16-bit words
+    "OW": struct.pack("H", 0x0000),
+    # Person Name - Family^Given^Middle^Prefix^Suffix
+    "PN": "DUMMY^PATIENT^^^",
+    # Short String - up to 16 characters
+    "SH": "DUMMY",
+    # Signed Long - 32-bit signed integer
+    "SL": 0,
+    # Sequence - sequence of items (empty)
+    "SQ": [],
+    # Signed Short - 16-bit signed integer
+    "SS": 0,
+    # Short Text - up to 1024 characters
+    "ST": "DUMMY SHORT TEXT",
+    # Signed Very Long - 64-bit signed integer
+    "SV": 0,
+    # Time - HHMMSS.FFFFFF format (12:00:00.000000)
+    "TM": "120000.000000",
+    # Unlimited Characters - unlimited length
+    "UC": "DUMMY UNLIMITED CHARACTERS",
+    # Unique Identifier (UID format)
+    "UI": "1.2.3.4.5.6.7.8.9.0.1.2.3.4.5.6.7.8.9.0",
+    # Unsigned Long - 32-bit unsigned integer
+    "UL": 0,
+    # Unknown - sequence of bytes (single zero byte buffer)
+    "UN": b"\x00",
+    # Universal Resource Identifier/Locator - URI/URL
+    "UR": "http://dummy.example.test",
+    # Unsigned Short - 16-bit unsigned integer
+    "US": 0,
+    # Unlimited Text - unlimited length text
+    "UT": "DUMMY UNLIMITED TEXT",
+    # Unsigned Very Long - 64-bit unsigned integer
+    "UV": 0,
+}
 
 
 class DicomDeidentifier:
@@ -136,8 +208,15 @@ class DicomDeidentifier:
             raise RejectedDICOMFileError(justification=justification) from None
         elif action == ActionKind.UID:
             elem.value = self.uid_map[elem.value]
+        elif action in (ActionKind.REPLACE, ActionKind.REPLACE_0):
+            elem.value = self._get_dummy_value(vr=elem.VR)
         else:
             raise NotImplementedError(f"Action {action} not implemented")
+
+    def _get_dummy_value(self, vr: str) -> Any:
+        if vr not in VR_DUMMY_VALUES:
+            raise NotImplementedError(f"Unsupported DICOM VR: {vr}")
+        return VR_DUMMY_VALUES[vr]
 
     def set_deidentification_method_tag(self, dataset: Dataset) -> None:
         """
