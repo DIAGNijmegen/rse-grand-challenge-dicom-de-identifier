@@ -6,8 +6,10 @@ authors = [
     {name = "Chris van Run"},
 ]
 license = {text = "Apache-2.0"}
-requires-python = ">=3.9, <4.0"
-dependencies = []
+requires-python = ">=3.10, <4.0"
+dependencies = [
+    "pydicom>=2.4.0",
+]
 readme = "README.md"
 
 [project.urls]
@@ -16,7 +18,14 @@ repository = "https://github.com/DIAGNijmegen/rse-grand-challenge-dicom-de-ident
 [dependency-groups]
 dev = [
     "pytest",
+    "mypy",
+    "types-pydicom",
 ]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+show_error_codes = true
 
 [tool.isort]
 profile = "black"
@@ -25,7 +34,7 @@ line_length = 79
 
 [tool.black]
 line-length = 79
-target-version = ['py39']
+target-version = ['py310']
 
 [tool.pytest.ini_options]
 testpaths = [
