@@ -1,7 +1,6 @@
 import os
 import struct
 from collections import defaultdict
-from datetime import datetime
 from functools import partial
 from typing import Any, AnyStr, BinaryIO, Dict, cast
 
@@ -171,7 +170,7 @@ class DicomDeidentifier:
             )
         )
 
-        self.set_deidentification_method_code(dataset)
+        self.set_deidentification_method_tag(dataset)
         self.set_patient_identity_removed_tag(dataset)
 
     def set_patient_identity_removed_tag(self, dataset: Dataset) -> None:
@@ -256,30 +255,28 @@ class DicomDeidentifier:
             raise NotImplementedError(f"Unsupported DICOM VR: {vr}")
         return VR_DUMMY_VALUES[vr]
 
-    def set_deidentification_method_code(self, dataset: Dataset) -> None:
+    def set_deidentification_method_tag(self, dataset: Dataset) -> None:
         """
-        Add or update the de-identification method tag.
+        Add the de-identification method tag.
 
         Args:
             dataset: DICOM dataset to modify
         """
         version = self.procedure.get("version", "unknown")
-        timestamp = datetime.now().isoformat()
 
-        # Ensure DeidentificationMethodCodeSequence exists and is a Sequence
-        if "DeidentificationMethodCodeSequence" in dataset:
-            method_seq = cast(
-                pydicom.sequence.Sequence,
-                dataset.DeidentificationMethodCodeSequence,
-            )
-        else:
-            method_seq = pydicom.sequence.Sequence()
-            dataset.DeidentificationMethodCodeSequence = method_seq
-
-        code = Dataset()
-        code.CodeMeaning = "Description of method"
-        code.LongCodeValue = (
-            f"De-identified by Python DICOM de-identifier using procedure "
-            f"version {version} on {timestamp}."
+        description = (
+            f"grand-challenge-dicom-de-identifier:procedure:{version}"
         )
-        method_seq.append(code)
+
+        if "DeidentificationMethod" in dataset:
+            elem = cast(DataElement, dataset["DeidentificationMethod"])
+            if elem.VM == 0:
+                methods = []
+            if elem.VM == 1:
+                methods = [elem.value]
+            else:
+                methods = elem.value
+            methods.append(description)
+            dataset.DeidentificationMethod = methods
+        else:
+            dataset.DeidentificationMethod = description

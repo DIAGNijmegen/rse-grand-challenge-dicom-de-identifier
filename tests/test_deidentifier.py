@@ -2,10 +2,11 @@
 
 import struct
 from contextlib import nullcontext
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, cast
 
 import pydicom
 import pytest
+from pydicom import DataElement
 from pydicom.dataset import Dataset
 
 from grand_challenge_dicom_de_identifier.deidentifier import DicomDeidentifier
@@ -441,7 +442,7 @@ def test_patient_identity_removed_tag() -> None:  # noqa
     assert getattr(ds, "PatientIdentityRemoved", None) == "YES"
 
 
-def test_deidentification_method_code() -> None:  # noqa
+def test_deidentification_method_tag() -> None:  # noqa
     ds = Dataset()
     ds.SOPClassUID = TEST_SOP_CLASS
 
@@ -454,30 +455,26 @@ def test_deidentification_method_code() -> None:  # noqa
                         tag("SOPClassUID"): {
                             "default": ActionKind.KEEP,
                         },
-                        tag("DeidentificationMethodCodeSequence"): {
+                        tag("DeidentificationMethod"): {
                             "default": ActionKind.KEEP
                         },
-                        tag("CodeMeaning"): {"default": ActionKind.KEEP},
-                        tag("LongCodeValue"): {"default": ActionKind.KEEP},
                     },
                 }
             },
         }
     )
 
-    assert "DeidentificationMethodCodeSequence" not in ds, "Sanity"
+    assert "DeidentificationMethod" not in ds, "Sanity"
     deidentifier.deidentify_dataset(ds)
-    sequence = getattr(ds, "DeidentificationMethodCodeSequence", [])
-    assert (
-        "De-identified by Python DICOM de-identifier using procedure"
-        in sequence[0].LongCodeValue
+
+    expected_value = (
+        "grand-challenge-dicom-de-identifier:procedure:test-procedure"
     )
+    assert ds.DeidentificationMethod == expected_value
 
     # Doing it twice ammends it
-    assert len(sequence) == 1
     deidentifier.deidentify_dataset(ds)
-    sequence = getattr(ds, "DeidentificationMethodCodeSequence", [])
-    assert len(sequence) == 2
+    assert cast(DataElement, ds["DeidentificationMethod"]).VM == 2
 
 
 @pytest.mark.parametrize(
