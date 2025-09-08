@@ -455,6 +455,34 @@ def test_fallback_default_action() -> None:  # noqa
     ), "Default action should be REMOVE"
 
 
+def test_patient_identity_removed_tag() -> None:  # noqa
+    ds = Dataset()
+    ds.SOPClassUID = TEST_SOP_CLASS
+
+    deidentifier = DicomDeidentifier(
+        procedure={
+            "sopClass": {
+                TEST_SOP_CLASS: {
+                    "tags": {
+                        tag("SOPClassUID"): {"default": ActionKind.KEEP},
+                        tag("PatientIdentityRemoved"): {
+                            "default": ActionKind.KEEP
+                        },
+                    },
+                }
+            },
+        }
+    )
+
+    assert "PatientIdentityRemoved" not in ds, "Sanity"
+    deidentifier.deidentify_dataset(ds)
+    assert getattr(ds, "PatientIdentityRemoved", None) == "YES"
+
+    # Should stay YES when run multiple times
+    deidentifier.deidentify_dataset(ds)
+    assert getattr(ds, "PatientIdentityRemoved", None) == "YES"
+
+
 def test_deidentification_method_tag() -> None:  # noqa
     ds = Dataset()
     ds.SOPClassUID = TEST_SOP_CLASS

@@ -162,6 +162,21 @@ class DicomDeidentifier:
         )
 
         self.set_deidentification_method_tag(dataset)
+        self.set_patient_identity_removed_tag(dataset)
+
+    def set_patient_identity_removed_tag(self, dataset: Dataset) -> None:
+        """
+        Add or update the Patient Identity Removed tag (0012,0062) with value 'YES'.
+
+        Args:
+            dataset: DICOM dataset to modify
+        """
+        # DICOM tag (0012,0062) - Patient Identity Removed
+        dataset.add_new(
+            tag=pydicom.tag.Tag(0x0012, 0x0062),
+            VR="CS",
+            value="YES",
+        )
 
     def _get_sop_class_procedure(self, dataset: Dataset) -> Any:
         try:
