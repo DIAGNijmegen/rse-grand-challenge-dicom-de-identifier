@@ -3,9 +3,12 @@ import struct
 from collections import defaultdict
 from datetime import datetime
 from functools import partial
-from typing import Any, AnyStr, BinaryIO, Dict
+from typing import Any, AnyStr, BinaryIO, Dict, cast
 
 import pydicom
+from grand_challenge_dicom_de_id_procedure import (
+    procedure as grand_challenge_procedure,
+)
 from pydicom import DataElement, Dataset
 from pydicom.filebase import ReadableBuffer, WriteableBuffer
 from pydicom.fileutil import PathType
@@ -103,7 +106,7 @@ class DicomDeidentifier:
         "sopClass": {
             "1.2.840.10008.xx": {  # SOP Class UID
                 "default": "X",  # Default action for unknown tags
-                "tags": {
+                "tag": {
                     "(0010,0010)": {"default": "X"},  # PatientName
                     "(0008,0060)": {"default": "K"},  # Modality
                     "(0008,0016)": {"default": "K"},  # SOPClassUID
@@ -124,7 +127,7 @@ class DicomDeidentifier:
             De-identification procedure to apply, by default the
             grand-challenge procedure is used.
         """
-        self.procedure: Dict[str, Any] = procedure or {}
+        self.procedure: Dict[str, Any] = procedure or grand_challenge_procedure
 
         self.uid_map: Dict[str, pydicom.uid.UID] = defaultdict(
             lambda: pydicom.uid.generate_uid(prefix=GRAND_CHALLENGE_ROOT_UID)
@@ -138,9 +141,16 @@ class DicomDeidentifier:
         output: str | os.PathLike[AnyStr] | BinaryIO | WriteableBuffer,
     ) -> None:
         """Process a DICOM file and save the de-identified result in output."""
-        with pydicom.dcmread(fp=file, force=True) as dataset:
+        with pydicom.dcmread(
+            fp=file,
+            force=True,
+            defer_size=1024 * 2,  # Defer loading elements larger than 2KB
+        ) as dataset:
             self.deidentify_dataset(dataset)
-            dataset.save_as(output)
+            dataset.save_as(
+                output,
+                enforce_file_format=True,
+            )
 
     def deidentify_dataset(self, dataset: pydicom.Dataset) -> None:
         """Process a DICOM dataset in place."""
@@ -149,7 +159,7 @@ class DicomDeidentifier:
         dataset.walk(
             partial(
                 self._handle_element,
-                action_lookup=sop_class_procedure["tags"],
+                action_lookup=sop_class_procedure["tag"],
                 default_action={
                     "default": sop_class_procedure.get(
                         "default", ActionKind.REMOVE
@@ -161,7 +171,7 @@ class DicomDeidentifier:
             )
         )
 
-        self.set_deidentification_method_tag(dataset)
+        self.set_deidentification_method_code(dataset)
         self.set_patient_identity_removed_tag(dataset)
 
     def set_patient_identity_removed_tag(self, dataset: Dataset) -> None:
@@ -191,7 +201,7 @@ class DicomDeidentifier:
                     )
                 ) from None
             elif default == ActionKind.KEEP:
-                sop_procedure = {"default": ActionKind.KEEP, "tags": {}}
+                sop_procedure = {"default": ActionKind.KEEP, "tag": {}}
             else:
                 raise NotImplementedError(
                     f"Default action {default} not implemented"
@@ -246,7 +256,7 @@ class DicomDeidentifier:
             raise NotImplementedError(f"Unsupported DICOM VR: {vr}")
         return VR_DUMMY_VALUES[vr]
 
-    def set_deidentification_method_tag(self, dataset: Dataset) -> None:
+    def set_deidentification_method_code(self, dataset: Dataset) -> None:
         """
         Add or update the de-identification method tag.
 
@@ -255,20 +265,21 @@ class DicomDeidentifier:
         """
         version = self.procedure.get("version", "unknown")
         timestamp = datetime.now().isoformat()
-        method = (
+
+        # Ensure DeidentificationMethodCodeSequence exists and is a Sequence
+        if "DeidentificationMethodCodeSequence" in dataset:
+            method_seq = cast(
+                pydicom.sequence.Sequence,
+                dataset.DeidentificationMethodCodeSequence,
+            )
+        else:
+            method_seq = pydicom.sequence.Sequence()
+            dataset.DeidentificationMethodCodeSequence = method_seq
+
+        code = Dataset()
+        code.CodeMeaning = "Description of method"
+        code.LongCodeValue = (
             f"De-identified by Python DICOM de-identifier using procedure "
             f"version {version} on {timestamp}."
         )
-
-        existing_method = dataset.get("DeidentificationMethod", "")
-        if existing_method:
-            new_method = f"{existing_method}; {method}"
-        else:
-            new_method = method
-
-        # DICOM tag (0012,0063) - De-identification Method
-        dataset.add_new(
-            tag=pydicom.tag.Tag(0x0012, 0x0063),
-            VR="LO",
-            value=new_method,
-        )
+        method_seq.append(code)

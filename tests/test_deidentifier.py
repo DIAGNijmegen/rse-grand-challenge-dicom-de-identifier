@@ -2,7 +2,6 @@
 
 import struct
 from contextlib import nullcontext
-from pathlib import Path
 from typing import Any, Dict, Optional
 
 import pydicom
@@ -14,48 +13,7 @@ from grand_challenge_dicom_de_identifier.exceptions import (
     RejectedDICOMFileError,
 )
 from grand_challenge_dicom_de_identifier.models import ActionKind
-from tests import RESOURCES_PATH
-
-TEST_SOP_CLASS = "1.2.840.10008.5.1.4.1.1.2"  # CT Image Storage
-
-
-def tag(keyword: str) -> str:
-    """Convert a DICOM keyword to a (gggg,eeee) tag string."""
-    tag_int = pydicom.datadict.tag_for_keyword(keyword) or 0
-    return f"({tag_int >> 16:04X},{tag_int & 0xFFFF:04X})"
-
-
-def test_deidentify_files(tmp_path: Path) -> None:  # noqa
-    deidentifier = DicomDeidentifier(
-        procedure={
-            "sopClass": {
-                TEST_SOP_CLASS: {
-                    "tags": {
-                        tag("PatientName"): {"default": ActionKind.REMOVE},
-                        tag("Modality"): {"default": ActionKind.KEEP},
-                    },
-                }
-            },
-        }
-    )
-
-    original = RESOURCES_PATH / "ct_minimal.dcm"
-    anonmynized = tmp_path / "ct_minimal_anonymized.dcm"
-
-    deidentifier.deidentify_file(
-        original,
-        output=anonmynized,
-    )
-
-    # Sanity: read the original and check the tags
-    original_ds = pydicom.dcmread(original)
-    assert getattr(original_ds, "PatientName", None) == "Test^Patient"
-    assert getattr(original_ds, "Modality", None) == "CT"
-
-    # Read the processed file and check de-identification
-    processed_ds = pydicom.dcmread(anonmynized)
-    assert not getattr(processed_ds, "PatientName", None)  # Should be removed
-    assert getattr(processed_ds, "Modality", None) == "CT"  # Should be kept
+from tests import TEST_SOP_CLASS, tag
 
 
 @pytest.mark.parametrize(
@@ -65,7 +23,7 @@ def test_deidentify_files(tmp_path: Path) -> None:  # noqa
             TEST_SOP_CLASS,
             {
                 "sopClass": {
-                    TEST_SOP_CLASS: {"tags": {}},
+                    TEST_SOP_CLASS: {"tag": {}},
                 },
                 "default": ActionKind.KEEP,
             },
@@ -75,7 +33,7 @@ def test_deidentify_files(tmp_path: Path) -> None:  # noqa
             TEST_SOP_CLASS,
             {
                 "sopClass": {
-                    TEST_SOP_CLASS: {"tags": {}},
+                    TEST_SOP_CLASS: {"tag": {}},
                 },
                 "default": ActionKind.REJECT,
             },
@@ -85,7 +43,7 @@ def test_deidentify_files(tmp_path: Path) -> None:  # noqa
             TEST_SOP_CLASS,
             {
                 "sopClass": {
-                    TEST_SOP_CLASS: {"tags": {}},
+                    TEST_SOP_CLASS: {"tag": {}},
                 },
                 "default": ActionKind.REJECT,
             },
@@ -95,7 +53,7 @@ def test_deidentify_files(tmp_path: Path) -> None:  # noqa
             TEST_SOP_CLASS,
             {
                 "sopClass": {
-                    "1.2.840.10008.5.1.4.1.1.128": {"tags": {}},
+                    "1.2.840.10008.5.1.4.1.1.128": {"tag": {}},
                 },
                 "default": ActionKind.KEEP,
             },
@@ -105,7 +63,7 @@ def test_deidentify_files(tmp_path: Path) -> None:  # noqa
             TEST_SOP_CLASS,
             {
                 "sopClass": {
-                    "1.2.840.10008.5.1.4.1.1.128": {"tags": {}},
+                    "1.2.840.10008.5.1.4.1.1.128": {"tag": {}},
                 },
                 "default": ActionKind.REJECT,
                 "justification": "TEST default justification",
@@ -118,7 +76,7 @@ def test_deidentify_files(tmp_path: Path) -> None:  # noqa
             TEST_SOP_CLASS,
             {
                 "sopClass": {
-                    "1.2.840.10008.5.1.4.1.1.128": {"tags": {}},
+                    "1.2.840.10008.5.1.4.1.1.128": {"tag": {}},
                 },
             },
             pytest.raises(RejectedDICOMFileError),
@@ -127,7 +85,7 @@ def test_deidentify_files(tmp_path: Path) -> None:  # noqa
             TEST_SOP_CLASS,
             {
                 "sopClass": {
-                    "1.2.840.10008.5.1.4.1.1.128": {"tags": {}},
+                    "1.2.840.10008.5.1.4.1.1.128": {"tag": {}},
                 },
                 "default": ActionKind.REJECT,
             },
@@ -140,7 +98,7 @@ def test_deidentify_files(tmp_path: Path) -> None:  # noqa
             TEST_SOP_CLASS,
             {
                 "sopClass": {
-                    "1.2.840.10008.5.1.4.1.1.128": {"tags": {}},
+                    "1.2.840.10008.5.1.4.1.1.128": {"tag": {}},
                 },
                 "default": "NOT_A_VALID_ACTION",
             },
@@ -169,7 +127,7 @@ def test_sop_class_handling(  # noqa
             {  # Sanity: regular KEEP
                 "sopClass": {
                     TEST_SOP_CLASS: {
-                        "tags": {
+                        "tag": {
                             tag("PatientName"): {"default": ActionKind.KEEP}
                         },
                     }
@@ -181,7 +139,7 @@ def test_sop_class_handling(  # noqa
             {
                 "sopClass": {
                     TEST_SOP_CLASS: {
-                        "tags": {},
+                        "tag": {},
                         "default": ActionKind.KEEP,
                     }
                 },
@@ -192,7 +150,7 @@ def test_sop_class_handling(  # noqa
             {
                 "sopClass": {
                     TEST_SOP_CLASS: {
-                        "tags": {
+                        "tag": {
                             tag("PatientName"): {
                                 "default": "NOT_A_VALID_ACTION"
                             }
@@ -206,7 +164,7 @@ def test_sop_class_handling(  # noqa
             {
                 "sopClass": {
                     TEST_SOP_CLASS: {
-                        "tags": {},
+                        "tag": {},
                         "default": "NOT_A_VALID_ACTION",
                     },
                 }
@@ -217,7 +175,7 @@ def test_sop_class_handling(  # noqa
             {
                 "sopClass": {
                     TEST_SOP_CLASS: {
-                        "tags": {
+                        "tag": {
                             tag("PatientName"): {
                                 "default": ActionKind.REJECT,
                                 "justification": "TEST tag-specific rejection",
@@ -234,7 +192,7 @@ def test_sop_class_handling(  # noqa
             {
                 "sopClass": {
                     TEST_SOP_CLASS: {
-                        "tags": {
+                        "tag": {
                             tag("PatientName"): {
                                 "default": ActionKind.REJECT,
                             }
@@ -250,7 +208,7 @@ def test_sop_class_handling(  # noqa
             {
                 "sopClass": {
                     TEST_SOP_CLASS: {
-                        "tags": {},
+                        "tag": {},
                         "default": ActionKind.REJECT,
                         "justification": "TEST default rejection",
                     }
@@ -264,7 +222,7 @@ def test_sop_class_handling(  # noqa
             {
                 "sopClass": {
                     TEST_SOP_CLASS: {
-                        "tags": {},
+                        "tag": {},
                         "default": ActionKind.REJECT,
                     }
                 },
@@ -299,7 +257,7 @@ def test_keep_action() -> None:  # noqa
         procedure={
             "sopClass": {
                 TEST_SOP_CLASS: {
-                    "tags": {
+                    "tag": {
                         tag("PatientName"): {"default": ActionKind.KEEP},
                     },
                 }
@@ -321,7 +279,7 @@ def test_remove_action() -> None:  # noqa
         procedure={
             "sopClass": {
                 TEST_SOP_CLASS: {
-                    "tags": {
+                    "tag": {
                         tag("PatientName"): {"default": ActionKind.REMOVE},
                     },
                 }
@@ -343,7 +301,7 @@ def test_reject_action() -> None:  # noqa
         procedure={
             "sopClass": {
                 TEST_SOP_CLASS: {
-                    "tags": {
+                    "tag": {
                         tag("PatientName"): {"default": ActionKind.REJECT},
                     },
                 }
@@ -361,22 +319,22 @@ def test_uid_action() -> None:  # noqa
     def gen_dataset() -> Dataset:
         ds = Dataset()
         ds.SOPClassUID = TEST_SOP_CLASS
-        ds.PatientName = "Test^Patient"
-        ds.Modality = "CT"
+        ds.StudyInstanceUID = "1.2.3"
+        ds.SeriesInstanceUID = "3.4.5"
         return ds
 
     ds = gen_dataset()
     ds_same = gen_dataset()
     ds_partial_same = gen_dataset()
-    ds_partial_same.Modality = "MT"  # Different modality
+    ds_partial_same.SeriesInstanceUID = "6.7.8"  # Different UID
 
     deidentifier = DicomDeidentifier(
         procedure={
             "sopClass": {
                 TEST_SOP_CLASS: {
-                    "tags": {
-                        tag("PatientName"): {"default": ActionKind.UID},
-                        tag("Modality"): {"default": ActionKind.UID},
+                    "tag": {
+                        tag("StudyInstanceUID"): {"default": ActionKind.UID},
+                        tag("SeriesInstanceUID"): {"default": ActionKind.UID},
                     },
                 }
             },
@@ -385,26 +343,26 @@ def test_uid_action() -> None:  # noqa
 
     # First pass
     deidentifier.deidentify_dataset(ds)
-    assert ds.PatientName != "Test^Patient"
-    assert ds.Modality != "CT"
+    assert ds.StudyInstanceUID != "1.2.3"
+    assert ds.SeriesInstanceUID != "3.4.5"
 
     # Should be stable for the same values
     deidentifier.deidentify_dataset(ds_same)
-    assert ds_same.PatientName == ds.PatientName
-    assert ds_same.Modality == ds.Modality
+    assert ds_same.StudyInstanceUID == ds.StudyInstanceUID
+    assert ds_same.SeriesInstanceUID == ds.SeriesInstanceUID
 
     # Mixed values should lead to partially different UIDs
     deidentifier.deidentify_dataset(ds_partial_same)
-    assert ds_partial_same.PatientName == ds.PatientName
-    assert ds_partial_same.Modality != ds.Modality
+    assert ds_partial_same.StudyInstanceUID == ds.StudyInstanceUID
+    assert ds_partial_same.SeriesInstanceUID != ds.SeriesInstanceUID
 
     # New Deidentifier should lead to different UIDs
     another_deidentifier = DicomDeidentifier(procedure=deidentifier.procedure)
     new_ds = gen_dataset()
 
     another_deidentifier.deidentify_dataset(new_ds)
-    assert new_ds.PatientName != ds.PatientName
-    assert new_ds.Modality != ds.Modality
+    assert new_ds.StudyInstanceUID != ds.StudyInstanceUID
+    assert new_ds.SeriesInstanceUID != ds.SeriesInstanceUID
 
 
 @pytest.mark.parametrize(
@@ -423,7 +381,7 @@ def test_replace_action(action: ActionKind) -> None:  # noqa
         procedure={
             "sopClass": {
                 TEST_SOP_CLASS: {
-                    "tags": {
+                    "tag": {
                         tag("PatientName"): {"default": action},
                     },
                 }
@@ -444,7 +402,7 @@ def test_fallback_default_action() -> None:  # noqa
 
     deidentifier = DicomDeidentifier(
         procedure={  # Note: no default action has been specified
-            "sopClass": {TEST_SOP_CLASS: {"tags": {}}},
+            "sopClass": {TEST_SOP_CLASS: {"tag": {}}},
         }
     )
 
@@ -463,7 +421,7 @@ def test_patient_identity_removed_tag() -> None:  # noqa
         procedure={
             "sopClass": {
                 TEST_SOP_CLASS: {
-                    "tags": {
+                    "tag": {
                         tag("SOPClassUID"): {"default": ActionKind.KEEP},
                         tag("PatientIdentityRemoved"): {
                             "default": ActionKind.KEEP
@@ -483,7 +441,7 @@ def test_patient_identity_removed_tag() -> None:  # noqa
     assert getattr(ds, "PatientIdentityRemoved", None) == "YES"
 
 
-def test_deidentification_method_tag() -> None:  # noqa
+def test_deidentification_method_code() -> None:  # noqa
     ds = Dataset()
     ds.SOPClassUID = TEST_SOP_CLASS
 
@@ -492,34 +450,34 @@ def test_deidentification_method_tag() -> None:  # noqa
             "version": "test-procedure",
             "sopClass": {
                 TEST_SOP_CLASS: {
-                    "tags": {  # Required to ensure a double pass succeeds
+                    "tag": {  # Required to ensure a double pass succeeds
                         tag("SOPClassUID"): {
                             "default": ActionKind.KEEP,
                         },
-                        tag("DeidentificationMethod"): {
+                        tag("DeidentificationMethodCodeSequence"): {
                             "default": ActionKind.KEEP
                         },
+                        tag("CodeMeaning"): {"default": ActionKind.KEEP},
+                        tag("LongCodeValue"): {"default": ActionKind.KEEP},
                     },
                 }
             },
         }
     )
 
-    assert "DeidentificationMethod" not in ds, "Sanity"
+    assert "DeidentificationMethodCodeSequence" not in ds, "Sanity"
     deidentifier.deidentify_dataset(ds)
+    sequence = getattr(ds, "DeidentificationMethodCodeSequence", [])
     assert (
         "De-identified by Python DICOM de-identifier using procedure"
-        in getattr(ds, "DeidentificationMethod", "")
+        in sequence[0].LongCodeValue
     )
 
     # Doing it twice ammends it
-    methods = getattr(ds, "DeidentificationMethod", "").split(";")
-    assert len(methods) == 1
-
+    assert len(sequence) == 1
     deidentifier.deidentify_dataset(ds)
-
-    methods = getattr(ds, "DeidentificationMethod", "").split(";")
-    assert len(methods) == 2
+    sequence = getattr(ds, "DeidentificationMethodCodeSequence", [])
+    assert len(sequence) == 2
 
 
 @pytest.mark.parametrize(
@@ -602,7 +560,7 @@ def test_sequence_handling_remove_replace_keep(  # noqa
         procedure={
             "sopClass": {
                 TEST_SOP_CLASS: {
-                    "tags": {
+                    "tag": {
                         tag("ReferencedStudySequence"): {"default": action},
                         tag("ReferencedSOPInstanceUID"): {
                             "default": ActionKind.KEEP
@@ -649,7 +607,7 @@ def test_within_sequence_tag_handling(  # noqa
         procedure={
             "sopClass": {
                 TEST_SOP_CLASS: {
-                    "tags": {
+                    "tag": {
                         tag("ReferencedStudySequence"): {
                             "default": ActionKind.KEEP
                         },
@@ -685,7 +643,7 @@ def test_within_sequence_tag_handling_after_replace() -> None:  # noqa
         procedure={
             "sopClass": {
                 TEST_SOP_CLASS: {
-                    "tags": {
+                    "tag": {
                         tag("ReferencedStudySequence"): {
                             "default": ActionKind.REPLACE
                         },
