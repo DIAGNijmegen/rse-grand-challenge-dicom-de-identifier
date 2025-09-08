@@ -162,6 +162,21 @@ class DicomDeidentifier:
         )
 
         self.set_deidentification_method_tag(dataset)
+        self.set_patient_identity_removed_tag(dataset)
+
+    def set_patient_identity_removed_tag(self, dataset: Dataset) -> None:
+        """
+        Add or update the Patient Identity Removed tag (0012,0062) with value 'YES'.
+
+        Args:
+            dataset: DICOM dataset to modify
+        """
+        # DICOM tag (0012,0062) - Patient Identity Removed
+        dataset.add_new(
+            tag=pydicom.tag.Tag(0x0012, 0x0062),
+            VR="CS",
+            value="YES",
+        )
 
     def _get_sop_class_procedure(self, dataset: Dataset) -> Any:
         try:
@@ -209,7 +224,20 @@ class DicomDeidentifier:
         elif action == ActionKind.UID:
             elem.value = self.uid_map[elem.value]
         elif action in (ActionKind.REPLACE, ActionKind.REPLACE_0):
-            elem.value = self._get_dummy_value(vr=elem.VR)
+            if elem.VR == "SQ":  # Sequence
+                for sequence_item in elem.value:
+                    sequence_item.walk(
+                        partial(
+                            self._handle_element,
+                            action_lookup={},  # Always defer to the default
+                            default_action={
+                                "default": action,
+                                "justification": "Parent sequence was replaced",
+                            },
+                        )
+                    )
+            else:
+                elem.value = self._get_dummy_value(vr=elem.VR)
         else:
             raise NotImplementedError(f"Action {action} not implemented")
 
