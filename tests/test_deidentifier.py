@@ -367,32 +367,95 @@ def test_uid_action() -> None:  # noqa
 
 
 @pytest.mark.parametrize(
-    "action",
+    "action, vr, initial_value, expected_value",
     (
-        ActionKind.REPLACE,
-        ActionKind.REPLACE_0,
+        (
+            ActionKind.REPLACE,
+            "PN",
+            "Test^Patient",
+            "DUMMY^PATIENT^^^",
+        ),
+        (  # Does a dummy value normally
+            ActionKind.REPLACE_0,
+            "PN",
+            "Test^Patient",
+            "DUMMY^PATIENT^^^",
+        ),
+        (  # Unless it matches the blanking VRs
+            ActionKind.REPLACE_0,
+            "CS",
+            "Foo",
+            "",
+        ),
+        (
+            ActionKind.REPLACE_0,
+            "LO",
+            "Foo",
+            "",
+        ),
+        (
+            ActionKind.REPLACE_0,
+            "LT",
+            "Foo",
+            "",
+        ),
+        (
+            ActionKind.REPLACE_0,
+            "SH",
+            "Foo",
+            "",
+        ),
+        (
+            ActionKind.REPLACE_0,
+            "ST",
+            "Foo",
+            "",
+        ),
+        (
+            ActionKind.REPLACE_0,
+            "UC",
+            "Foo",
+            "",
+        ),
+        (
+            ActionKind.REPLACE_0,
+            "UT",
+            "Foo",
+            "",
+        ),
     ),
 )
-def test_replace_action(action: ActionKind) -> None:  # noqa
+def test_replace_action(  # noqa
+    action: ActionKind,
+    vr: str,
+    initial_value: Any,
+    expected_value: Any,
+) -> None:
     ds = Dataset()
     ds.SOPClassUID = TEST_SOP_CLASS
-    ds.PatientName = "Test^Patient"
+    tag_id = 0x00100010
+
+    ds.add_new(tag_id, vr, initial_value)
 
     deidentifier = DicomDeidentifier(
         procedure={
             "sopClass": {
                 TEST_SOP_CLASS: {
                     "tag": {
-                        tag("PatientName"): {"default": action},
+                        tag(tag_int=tag_id): {
+                            "default": action,
+                        }
                     },
-                }
-            },
+                },
+            }
         }
     )
 
-    assert ds.PatientName == "Test^Patient"
+    assert cast(DataElement, ds[tag_id]).value == initial_value, "Sanity"
+
     deidentifier.deidentify_dataset(ds)
-    assert ds.PatientName == "DUMMY^PATIENT^^^"
+
+    assert cast(DataElement, ds[tag_id]).value == expected_value
 
 
 def test_fallback_default_action() -> None:  # noqa
