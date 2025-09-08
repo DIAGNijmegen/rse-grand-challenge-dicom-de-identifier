@@ -2,7 +2,6 @@ import os
 import struct
 from collections import defaultdict
 from dataclasses import dataclass
-from functools import partial
 from typing import Any, AnyStr, BinaryIO, Callable, Dict, cast
 
 import pydicom
@@ -112,8 +111,10 @@ class ActionContext:
 
     dataset: Dataset
     elem: DataElement
+    action_lookup: Dict[str, Action]
+    default_action: Action
     action: str
-    justification: str = ""
+    justification: str
 
 
 class DicomDeidentifier:
@@ -178,9 +179,10 @@ class DicomDeidentifier:
         """Process a DICOM dataset in place."""
         sop_class_procedure = self._get_sop_class_procedure(dataset)
 
-        dataset.walk(
-            partial(
-                self._handle_element,
+        for elem in dataset:
+            self._handle_element(
+                elem=elem,
+                dataset=dataset,
                 action_lookup=sop_class_procedure["tag"],
                 default_action={
                     "default": sop_class_procedure.get(
@@ -191,7 +193,6 @@ class DicomDeidentifier:
                     ),
                 },
             )
-        )
 
         self.set_deidentification_method_tag(dataset)
         self.set_patient_identity_removed_tag(dataset)
@@ -234,8 +235,8 @@ class DicomDeidentifier:
 
     def _handle_element(
         self,
-        dataset: Dataset,
         elem: DataElement,
+        dataset: Dataset,
         action_lookup: Dict[str, Action],
         default_action: Action,
     ) -> None:
@@ -267,6 +268,8 @@ class DicomDeidentifier:
             ActionContext(
                 dataset=dataset,
                 elem=elem,
+                action_lookup=action_lookup,
+                default_action=default_action,
                 action=action,
                 justification=justification,
             )
@@ -276,7 +279,17 @@ class DicomDeidentifier:
         del context.dataset[context.elem.tag]
 
     def _handle_keep_action(self, /, context: ActionContext) -> None:
-        pass
+        if context.elem.VR == "SQ":  # Sequence
+            for dataset in context.elem.value:
+                for elem in dataset:
+                    self._handle_element(
+                        elem=elem,
+                        dataset=dataset,
+                        action_lookup=context.action_lookup,
+                        default_action=context.default_action,
+                    )
+        else:
+            pass  # No action needed, keep as is
 
     def _handle_reject_action(self, /, context: ActionContext) -> None:
         raise RejectedDICOMFileError(
@@ -288,33 +301,33 @@ class DicomDeidentifier:
 
     def _handle_replace_action(self, /, context: ActionContext) -> None:
         if context.elem.VR == "SQ":  # Sequence
-            for sequence_item in context.elem.value:
-                sequence_item.walk(
-                    partial(
-                        self._handle_element,
+            for dataset in context.elem.value:
+                for elem in dataset:
+                    self._handle_element(
+                        elem=elem,
+                        dataset=dataset,
                         action_lookup={},  # Always defer to the default
                         default_action={
                             "default": ActionKind.REPLACE,
                             "justification": "Parent sequence was replaced",
                         },
                     )
-                )
         else:
             context.elem.value = self._get_dummy_value(vr=context.elem.VR)
 
     def _handle_replace_0(self, /, context: ActionContext) -> None:
         if context.elem.VR == "SQ":  # Sequence
-            for sequence_item in context.elem.value:
-                sequence_item.walk(
-                    partial(
-                        self._handle_element,
+            for dataset in context.elem.value:
+                for elem in dataset:
+                    self._handle_element(
+                        elem=elem,
+                        dataset=dataset,
                         action_lookup={},  # Always defer to the default
                         default_action={
                             "default": ActionKind.REPLACE_0,
                             "justification": "Parent sequence was replaced (0)",
                         },
                     )
-                )
         elif context.elem.VR in VR_TO_BLANK:
             context.elem.value = ""
         else:
