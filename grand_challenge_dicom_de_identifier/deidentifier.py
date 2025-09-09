@@ -371,10 +371,10 @@ class DicomDeidentifier:
                     f"vs {elem.value}"
                 )
 
-    def _handle_remove_action(self, /, context: ActionContext) -> None:
+    def _handle_remove_action(self, context: ActionContext, /) -> None:
         del context.dataset[context.elem.tag]
 
-    def _handle_keep_action(self, /, context: ActionContext) -> None:
+    def _handle_keep_action(self, context: ActionContext, /) -> None:
         if context.elem.VR == "SQ":  # Sequence
             for dataset in context.elem.value:
                 for elem in dataset:
@@ -387,15 +387,15 @@ class DicomDeidentifier:
         else:
             pass  # No action needed, keep as is
 
-    def _handle_reject_action(self, /, context: ActionContext) -> None:
+    def _handle_reject_action(self, context: ActionContext, /) -> None:
         raise RejectedDICOMFileError(
             justification=context.justification
         ) from None
 
-    def _handle_uid_action(self, /, context: ActionContext) -> None:
+    def _handle_uid_action(self, context: ActionContext, /) -> None:
         context.elem.value = self.uid_map[context.elem.value]
 
-    def _handle_replace_action(self, /, context: ActionContext) -> None:
+    def _handle_replace_action(self, context: ActionContext, /) -> None:
         if context.elem.VR == "SQ":  # Sequence
             for dataset in context.elem.value:
                 for elem in dataset:
@@ -411,7 +411,7 @@ class DicomDeidentifier:
         else:
             context.elem.value = self._get_dummy_value(vr=context.elem.VR)
 
-    def _handle_replace_0(self, /, context: ActionContext) -> None:
+    def _handle_replace_0(self, context: ActionContext, /) -> None:
         if context.elem.VR == "SQ":  # Sequence
             for dataset in context.elem.value:
                 for elem in dataset:
