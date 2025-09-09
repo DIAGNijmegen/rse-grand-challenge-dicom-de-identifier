@@ -752,3 +752,66 @@ def test_unique_value(action: ActionKind) -> None:  # noqa
         RejectedDICOMFileError, match="has differing values across files"
     ):
         deidentifier.deidentify_dataset(ds_other)
+
+
+@pytest.mark.parametrize(
+    "start_value",
+    ["Test^Patient", None],
+)
+@pytest.mark.parametrize(
+    "action",
+    [
+        ActionKind.REMOVE,
+        ActionKind.REPLACE,
+        ActionKind.KEEP,
+        ActionKind.REJECT,
+    ],
+)
+def test_forced_inserts_action(  # noqa
+    start_value: Optional[str],
+    action: ActionKind,
+) -> None:
+    ds = Dataset()
+    ds.SOPClassUID = TEST_SOP_CLASS
+    if start_value is not None:
+        ds.PatientName = start_value
+
+    forced_value = "FORCED^VALUE"
+
+    deidentifier = DicomDeidentifier(
+        procedure={
+            "sopClass": {
+                TEST_SOP_CLASS: {
+                    "tag": {
+                        tag("PatientName"): {"default": action},
+                    },
+                }
+            },
+        },
+        forced_inserts={
+            "PatientName": forced_value,
+        },
+    )
+
+    deidentifier.deidentify_dataset(ds)
+    assert ds.PatientName == forced_value
+
+    assert getattr(ds, "PatientName", None) == forced_value
+
+
+def test_forced_inserts_uid_add_root() -> None:  # noqa
+    ds = Dataset()
+    ds.SOPClassUID = TEST_SOP_CLASS
+    ds.StudyInstanceUID = "1.2.3"
+
+    deidentifier = DicomDeidentifier(
+        procedure={
+            "sopClass": {TEST_SOP_CLASS: {"tag": {}}},
+        },
+        forced_inserts={
+            "StudyInstanceUID": "456",
+        },
+    )
+
+    deidentifier.deidentify_dataset(ds)
+    assert ds.StudyInstanceUID == "1.2.826.0.1.3680043.10.1666.456"

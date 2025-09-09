@@ -2,6 +2,7 @@ import os
 import struct
 from collections import defaultdict
 from dataclasses import dataclass
+from itertools import chain
 from typing import Any, AnyStr, BinaryIO, Callable, Collection, Dict, cast
 
 import pydicom
@@ -142,6 +143,7 @@ class DicomDeidentifier:
         self,
         procedure: None | Dict[str, Any] = None,
         assert_unique_value_for: None | Collection[str] = None,
+        forced_inserts: None | Dict[str, Any] = None,
     ) -> None:
         """Initialize the DicomDeidentifier.
 
@@ -157,15 +159,54 @@ class DicomDeidentifier:
             elements. If a file has a different value for any of these
             elements compared to previous files, a RejectedDICOMFileError
             is raised. By default no such check is performed.
+
+        forced_inserts : optional
+            A dictionary of element keywords (e.g. {"PatientName": "ANONYMIZED"})
+            that will always be inserted with the given value, regardless
+            of the action specified in the procedure. By default no forced
+            inserts are applied.
         """
         self.procedure: Dict[str, Any] = procedure or grand_challenge_procedure
+
         self._assert_unique_values_for: Collection[str] = (
             assert_unique_value_for or set()
         )
+        self._forced_inserts: Dict[str, Any] = self._process_forced_inserts(
+            forced_inserts or {}
+        )
+        for keyword in chain(
+            self._assert_unique_values_for, self._forced_inserts
+        ):
+            self._assert_valid_keyword(keyword)
+
         self._unique_value_lookup: Dict[str, Any] = {}
         self.uid_map: Dict[str, pydicom.uid.UID] = defaultdict(
             lambda: pydicom.uid.generate_uid(prefix=GRAND_CHALLENGE_ROOT_UID)
         )
+
+        self._action_map: Dict[str, Callable[[ActionContext], None]] = {
+            ActionKind.REMOVE: self._handle_remove_action,
+            ActionKind.KEEP: self._handle_keep_action,
+            ActionKind.REJECT: self._handle_reject_action,
+            ActionKind.UID: self._handle_uid_action,
+            ActionKind.REPLACE: self._handle_replace_action,
+            ActionKind.REPLACE_0: self._handle_replace_0,
+        }
+
+    @staticmethod
+    def _assert_valid_keyword(keyword: str) -> None:
+        if keyword not in pydicom.datadict.keyword_dict:
+            raise ValueError(f"Keyword {keyword!r} is not valid")
+
+    @staticmethod
+    def _process_forced_inserts(
+        forced_inserts: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        for keyword, value in forced_inserts.items():
+            if pydicom.datadict.dictionary_VR(keyword) == "UI":
+                value = GRAND_CHALLENGE_ROOT_UID + str(value)
+            forced_inserts[keyword] = value
+        return forced_inserts
 
     def deidentify_file(
         self,
@@ -205,23 +246,10 @@ class DicomDeidentifier:
                 },
             )
 
+        # Some post-processing steps
         self.set_deidentification_method_tag(dataset)
         self.set_patient_identity_removed_tag(dataset)
-
-    @staticmethod
-    def set_patient_identity_removed_tag(dataset: Dataset) -> None:
-        """
-        Add or update the Patient Identity Removed tag (0012,0062) with value 'YES'.
-
-        Args:
-            dataset: DICOM dataset to modify
-        """
-        # DICOM tag (0012,0062) - Patient Identity Removed
-        dataset.add_new(
-            tag=pydicom.tag.Tag(0x0012, 0x0062),
-            VR="CS",
-            value="YES",
-        )
+        self.set_forced_inserts(dataset)
 
     def _get_sop_class_procedure(self, dataset: Dataset) -> Any:
         try:
@@ -244,6 +272,57 @@ class DicomDeidentifier:
 
         return sop_procedure
 
+    @staticmethod
+    def set_patient_identity_removed_tag(dataset: Dataset) -> None:
+        """
+        Add or update the Patient Identity Removed tag (0012,0062) with value 'YES'.
+
+        Args:
+            dataset: DICOM dataset to modify
+        """
+        # DICOM tag (0012,0062) - Patient Identity Removed
+        dataset.add_new(
+            tag=pydicom.tag.Tag(0x0012, 0x0062),
+            VR="CS",
+            value="YES",
+        )
+
+    def set_deidentification_method_tag(self, dataset: Dataset) -> None:
+        """
+        Add the de-identification method tag.
+
+        Args:
+            dataset: DICOM dataset to modify
+        """
+        version = self.procedure.get("version", "unknown")
+
+        description = (
+            f"grand-challenge-dicom-de-identifier:procedure:{version}"
+        )
+
+        if "DeidentificationMethod" in dataset:
+            elem = cast(DataElement, dataset["DeidentificationMethod"])
+            if elem.VM == 0:
+                methods = []
+            if elem.VM == 1:
+                methods = [elem.value]
+            else:
+                methods = elem.value
+            methods.append(description)
+            dataset.DeidentificationMethod = methods
+        else:
+            dataset.DeidentificationMethod = description
+
+    def set_forced_inserts(self, dataset: Dataset) -> None:
+        """
+        Insert or update elements in the dataset based on forced_inserts.
+
+        Args:
+            dataset: DICOM dataset to modify
+        """
+        for keyword, value in self._forced_inserts.items():
+            setattr(dataset, keyword, value)
+
     def _handle_element(
         self,
         elem: DataElement,
@@ -262,31 +341,24 @@ class DicomDeidentifier:
 
         self._check_unique_value(elem=elem)
 
-        action_map: Dict[str, Callable[[ActionContext], None]] = {
-            ActionKind.REMOVE: self._handle_remove_action,
-            ActionKind.KEEP: self._handle_keep_action,
-            ActionKind.REJECT: self._handle_reject_action,
-            ActionKind.UID: self._handle_uid_action,
-            ActionKind.REPLACE: self._handle_replace_action,
-            ActionKind.REPLACE_0: self._handle_replace_0,
-        }
-        try:
-            handler = action_map[action]
-        except KeyError:
-            raise NotImplementedError(
-                f"Action {action} not implemented"
-            ) from None
+        if elem.keyword not in self._forced_inserts:
+            try:
+                handler = self._action_map[action]
+            except KeyError:
+                raise NotImplementedError(
+                    f"Action {action} not implemented"
+                ) from None
 
-        handler(
-            ActionContext(
-                dataset=dataset,
-                elem=elem,
-                action_lookup=action_lookup,
-                default_action=default_action,
-                action=action,
-                justification=justification,
+            handler(
+                ActionContext(
+                    dataset=dataset,
+                    elem=elem,
+                    action_lookup=action_lookup,
+                    default_action=default_action,
+                    action=action,
+                    justification=justification,
+                )
             )
-        )
 
     def _check_unique_value(self, elem: DataElement) -> None:
         if elem.keyword in self._assert_unique_values_for:
@@ -361,29 +433,3 @@ class DicomDeidentifier:
         if vr not in VR_DUMMY_VALUES:
             raise NotImplementedError(f"Unsupported DICOM VR: {vr}")
         return VR_DUMMY_VALUES[vr]
-
-    def set_deidentification_method_tag(self, dataset: Dataset) -> None:
-        """
-        Add the de-identification method tag.
-
-        Args:
-            dataset: DICOM dataset to modify
-        """
-        version = self.procedure.get("version", "unknown")
-
-        description = (
-            f"grand-challenge-dicom-de-identifier:procedure:{version}"
-        )
-
-        if "DeidentificationMethod" in dataset:
-            elem = cast(DataElement, dataset["DeidentificationMethod"])
-            if elem.VM == 0:
-                methods = []
-            if elem.VM == 1:
-                methods = [elem.value]
-            else:
-                methods = elem.value
-            methods.append(description)
-            dataset.DeidentificationMethod = methods
-        else:
-            dataset.DeidentificationMethod = description
