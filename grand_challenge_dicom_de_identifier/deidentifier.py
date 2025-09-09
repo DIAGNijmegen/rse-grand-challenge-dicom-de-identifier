@@ -1,9 +1,9 @@
 import os
 import struct
 from collections import defaultdict
-from datetime import datetime
+from dataclasses import dataclass
 from functools import partial
-from typing import Any, AnyStr, BinaryIO, Dict, cast
+from typing import Any, AnyStr, BinaryIO, Callable, Dict, cast
 
 import pydicom
 from grand_challenge_dicom_de_id_procedure import (
@@ -22,6 +22,18 @@ from grand_challenge_dicom_de_identifier.typing import Action
 # Requested via http://www.medicalconnections.co.uk/
 GRAND_CHALLENGE_ROOT_UID: str = "1.2.826.0.1.3680043.10.1666."
 
+# VRs (Value Representations) that should be blanked when using "Z" action
+VR_TO_BLANK: set[str] = {
+    "CS",  # Code String
+    "LO",  # Long String
+    "LT",  # Long Text
+    "SH",  # Short String
+    "ST",  # Short Text
+    "UC",  # Unlimited Characters
+    "UT",  # Unlimited Text
+}
+
+# Dummy values for different VRs when "Z" or "D" action is used
 VR_DUMMY_VALUES: Dict[str, Any] = {
     # Application Entity - up to 16 characters, no leading/trailing spaces
     "AE": "DUMMY_AE",
@@ -92,6 +104,16 @@ VR_DUMMY_VALUES: Dict[str, Any] = {
     # Unsigned Very Long - 64-bit unsigned integer
     "UV": 0,
 }
+
+
+@dataclass
+class ActionContext:
+    """Context object for passing information during action handling."""
+
+    dataset: Dataset
+    elem: DataElement
+    action: str
+    justification: str = ""
 
 
 class DicomDeidentifier:
@@ -171,10 +193,11 @@ class DicomDeidentifier:
             )
         )
 
-        self.set_deidentification_method_code(dataset)
+        self.set_deidentification_method_tag(dataset)
         self.set_patient_identity_removed_tag(dataset)
 
-    def set_patient_identity_removed_tag(self, dataset: Dataset) -> None:
+    @staticmethod
+    def set_patient_identity_removed_tag(dataset: Dataset) -> None:
         """
         Add or update the Patient Identity Removed tag (0012,0062) with value 'YES'.
 
@@ -225,61 +248,105 @@ class DicomDeidentifier:
             action = action_desc["default"]
             justification = action_desc.get("justification", "")
 
-        if action == ActionKind.REMOVE:
-            del dataset[elem.tag]
-        elif action == ActionKind.KEEP:
-            pass
-        elif action == ActionKind.REJECT:
-            raise RejectedDICOMFileError(justification=justification) from None
-        elif action == ActionKind.UID:
-            elem.value = self.uid_map[elem.value]
-        elif action in (ActionKind.REPLACE, ActionKind.REPLACE_0):
-            if elem.VR == "SQ":  # Sequence
-                for sequence_item in elem.value:
-                    sequence_item.walk(
-                        partial(
-                            self._handle_element,
-                            action_lookup={},  # Always defer to the default
-                            default_action={
-                                "default": action,
-                                "justification": "Parent sequence was replaced",
-                            },
-                        )
+        action_map: Dict[str, Callable[[ActionContext], None]] = {
+            ActionKind.REMOVE: self._handle_remove_action,
+            ActionKind.KEEP: self._handle_keep_action,
+            ActionKind.REJECT: self._handle_reject_action,
+            ActionKind.UID: self._handle_uid_action,
+            ActionKind.REPLACE: self._handle_replace_action,
+            ActionKind.REPLACE_0: self._handle_replace_0,
+        }
+        try:
+            handler = action_map[action]
+        except KeyError:
+            raise NotImplementedError(
+                f"Action {action} not implemented"
+            ) from None
+
+        handler(
+            ActionContext(
+                dataset=dataset,
+                elem=elem,
+                action=action,
+                justification=justification,
+            )
+        )
+
+    def _handle_remove_action(self, /, context: ActionContext) -> None:
+        del context.dataset[context.elem.tag]
+
+    def _handle_keep_action(self, /, context: ActionContext) -> None:
+        pass
+
+    def _handle_reject_action(self, /, context: ActionContext) -> None:
+        raise RejectedDICOMFileError(
+            justification=context.justification
+        ) from None
+
+    def _handle_uid_action(self, /, context: ActionContext) -> None:
+        context.elem.value = self.uid_map[context.elem.value]
+
+    def _handle_replace_action(self, /, context: ActionContext) -> None:
+        if context.elem.VR == "SQ":  # Sequence
+            for sequence_item in context.elem.value:
+                sequence_item.walk(
+                    partial(
+                        self._handle_element,
+                        action_lookup={},  # Always defer to the default
+                        default_action={
+                            "default": ActionKind.REPLACE,
+                            "justification": "Parent sequence was replaced",
+                        },
                     )
-            else:
-                elem.value = self._get_dummy_value(vr=elem.VR)
+                )
         else:
-            raise NotImplementedError(f"Action {action} not implemented")
+            context.elem.value = self._get_dummy_value(vr=context.elem.VR)
+
+    def _handle_replace_0(self, /, context: ActionContext) -> None:
+        if context.elem.VR == "SQ":  # Sequence
+            for sequence_item in context.elem.value:
+                sequence_item.walk(
+                    partial(
+                        self._handle_element,
+                        action_lookup={},  # Always defer to the default
+                        default_action={
+                            "default": ActionKind.REPLACE_0,
+                            "justification": "Parent sequence was replaced (0)",
+                        },
+                    )
+                )
+        elif context.elem.VR in VR_TO_BLANK:
+            context.elem.value = ""
+        else:
+            context.elem.value = self._get_dummy_value(vr=context.elem.VR)
 
     def _get_dummy_value(self, vr: str) -> Any:
         if vr not in VR_DUMMY_VALUES:
             raise NotImplementedError(f"Unsupported DICOM VR: {vr}")
         return VR_DUMMY_VALUES[vr]
 
-    def set_deidentification_method_code(self, dataset: Dataset) -> None:
+    def set_deidentification_method_tag(self, dataset: Dataset) -> None:
         """
-        Add or update the de-identification method tag.
+        Add the de-identification method tag.
 
         Args:
             dataset: DICOM dataset to modify
         """
         version = self.procedure.get("version", "unknown")
-        timestamp = datetime.now().isoformat()
 
-        # Ensure DeidentificationMethodCodeSequence exists and is a Sequence
-        if "DeidentificationMethodCodeSequence" in dataset:
-            method_seq = cast(
-                pydicom.sequence.Sequence,
-                dataset.DeidentificationMethodCodeSequence,
-            )
-        else:
-            method_seq = pydicom.sequence.Sequence()
-            dataset.DeidentificationMethodCodeSequence = method_seq
-
-        code = Dataset()
-        code.CodeMeaning = "Description of method"
-        code.LongCodeValue = (
-            f"De-identified by Python DICOM de-identifier using procedure "
-            f"version {version} on {timestamp}."
+        description = (
+            f"grand-challenge-dicom-de-identifier:procedure:{version}"
         )
-        method_seq.append(code)
+
+        if "DeidentificationMethod" in dataset:
+            elem = cast(DataElement, dataset["DeidentificationMethod"])
+            if elem.VM == 0:
+                methods = []
+            if elem.VM == 1:
+                methods = [elem.value]
+            else:
+                methods = elem.value
+            methods.append(description)
+            dataset.DeidentificationMethod = methods
+        else:
+            dataset.DeidentificationMethod = description
