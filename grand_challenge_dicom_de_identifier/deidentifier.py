@@ -2,7 +2,7 @@ import os
 import struct
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Any, AnyStr, BinaryIO, Callable, Dict, cast
+from typing import Any, AnyStr, BinaryIO, Callable, Collection, Dict, cast
 
 import pydicom
 from grand_challenge_dicom_de_id_procedure import (
@@ -141,17 +141,28 @@ class DicomDeidentifier:
     def __init__(
         self,
         procedure: None | Dict[str, Any] = None,
+        assert_unique_value_for: None | Collection[str] = None,
     ) -> None:
         """Initialize the DicomDeidentifier.
 
         Parameters
         ----------
         procedure : optional
-            De-identification procedure to apply, by default the
-            grand-challenge procedure is used.
+            De-identification procedure to apply. By default the
+            installed grand-challenge procedure is used.
+
+        assert_unique_value_for : optional
+            A collection of element keywords (e.g. ["PatientName"]) that
+            ensures input files all have the same value for these
+            elements. If a file has a different value for any of these
+            elements compared to previous files, a RejectedDICOMFileError
+            is raised. By default no such check is performed.
         """
         self.procedure: Dict[str, Any] = procedure or grand_challenge_procedure
-
+        self._assert_unique_values_for: Collection[str] = (
+            assert_unique_value_for or set()
+        )
+        self._unique_value_lookup: Dict[str, Any] = {}
         self.uid_map: Dict[str, pydicom.uid.UID] = defaultdict(
             lambda: pydicom.uid.generate_uid(prefix=GRAND_CHALLENGE_ROOT_UID)
         )
@@ -249,6 +260,8 @@ class DicomDeidentifier:
             action = action_desc["default"]
             justification = action_desc.get("justification", "")
 
+        self._check_unique_value(elem=elem)
+
         action_map: Dict[str, Callable[[ActionContext], None]] = {
             ActionKind.REMOVE: self._handle_remove_action,
             ActionKind.KEEP: self._handle_keep_action,
@@ -274,6 +287,17 @@ class DicomDeidentifier:
                 justification=justification,
             )
         )
+
+    def _check_unique_value(self, elem: DataElement) -> None:
+        if elem.keyword in self._assert_unique_values_for:
+            if elem.keyword not in self._unique_value_lookup:
+                self._unique_value_lookup[elem.keyword] = elem.value
+            elif self._unique_value_lookup[elem.keyword] != elem.value:
+                raise RejectedDICOMFileError(
+                    justification=f"Element {elem.keyword!r} has differing values "
+                    f"across files: {self._unique_value_lookup[elem.keyword]} "
+                    f"vs {elem.value}"
+                )
 
     def _handle_remove_action(self, /, context: ActionContext) -> None:
         del context.dataset[context.elem.tag]
