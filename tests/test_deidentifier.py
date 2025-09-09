@@ -815,3 +815,22 @@ def test_forced_inserts_uid_add_root() -> None:  # noqa
 
     deidentifier.deidentify_dataset(ds)
     assert ds.StudyInstanceUID == "1.2.826.0.1.3680043.10.1666.456"
+
+
+def test_forced_inserts_uid_forced_validity() -> None:  # noqa
+    ds = Dataset()
+    ds.SOPClassUID = TEST_SOP_CLASS
+    ds.StudyInstanceUID = "1.2.3"
+
+    with pytest.raises(
+        ValueError,
+        match="exceeds the maximum length of 64",
+    ):
+        _ = DicomDeidentifier(
+            procedure={
+                "sopClass": {TEST_SOP_CLASS: {"tag": {}}},
+            },
+            forced_inserts={
+                "StudyInstanceUID": "1" * 37,
+            },
+        )

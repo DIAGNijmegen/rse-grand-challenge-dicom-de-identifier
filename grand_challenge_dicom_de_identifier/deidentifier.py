@@ -203,8 +203,12 @@ class DicomDeidentifier:
         forced_inserts: Dict[str, Any],
     ) -> Dict[str, Any]:
         for keyword, value in forced_inserts.items():
-            if pydicom.datadict.dictionary_VR(keyword) == "UI":
+            vr = pydicom.datadict.dictionary_VR(keyword)
+            if vr == "UI":
                 value = GRAND_CHALLENGE_ROOT_UID + str(value)
+            pydicom.dataelem.validate_value(
+                vr=vr, value=value, validation_mode=pydicom.config.RAISE
+            )
             forced_inserts[keyword] = value
         return forced_inserts
 
