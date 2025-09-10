@@ -637,29 +637,53 @@ def test_sequence_handling_remove_replace_keep(  # noqa
 
 
 @pytest.mark.parametrize(
-    "action, expected_value",
+    "sequence_action, tag_action, expected_value",
     (
         (
             ActionKind.KEEP,
-            "1.2.3",
+            ActionKind.KEEP,
+            "1.2.3",  # Unchanged
+        ),
+        (
+            ActionKind.KEEP,
+            ActionKind.REPLACE,
+            "1.2.3.4.5.6.7.8.9.0.1.2.3.4.5.6.7.8.9.0",  # Replaced
         ),
         (
             ActionKind.REPLACE,
-            "1.2.3.4.5.6.7.8.9.0.1.2.3.4.5.6.7.8.9.0",
+            ActionKind.REPLACE,
+            "1.2.3.4.5.6.7.8.9.0.1.2.3.4.5.6.7.8.9.0",  # Replaced
+        ),
+        (
+            ActionKind.REPLACE,
+            ActionKind.REMOVE,
+            "1.2.3.4.5.6.7.8.9.0.1.2.3.4.5.6.7.8.9.0",  # Replaced
+        ),
+        (
+            ActionKind.REPLACE,
+            ActionKind.KEEP,
+            "1.2.3.4.5.6.7.8.9.0.1.2.3.4.5.6.7.8.9.0",  # Replaced
         ),
         (
             ActionKind.REMOVE,
-            None,
+            ActionKind.REMOVE,
+            None,  # Removed
+        ),
+        (
+            ActionKind.REMOVE,
+            ActionKind.KEEP,
+            None,  # Removed
         ),
     ),
 )
 def test_within_sequence_tag_handling(  # noqa
-    action: ActionKind, expected_value: Optional[str]
+    sequence_action: ActionKind,
+    tag_action: ActionKind,
+    expected_value: Optional[str],
 ) -> None:
     ds = Dataset()
     ds.SOPClassUID = TEST_SOP_CLASS
 
-    # Create a sequence with two items
     ds.ReferencedStudySequence = pydicom.sequence.Sequence([Dataset()])
     ds.ReferencedStudySequence[0].ReferencedSOPInstanceUID = "1.2.3"
 
@@ -669,10 +693,10 @@ def test_within_sequence_tag_handling(  # noqa
                 TEST_SOP_CLASS: {
                     "tag": {
                         tag("ReferencedStudySequence"): {
-                            "default": ActionKind.KEEP
+                            "default": sequence_action
                         },
                         tag("ReferencedSOPInstanceUID"): {
-                            "default": action,
+                            "default": tag_action,
                         },
                     },
                 }
@@ -682,46 +706,7 @@ def test_within_sequence_tag_handling(  # noqa
     deidentifier.deidentify_dataset(ds)
 
     if expected_value is None:
-        assert not hasattr(
-            ds.ReferencedStudySequence[0], "ReferencedSOPInstanceUID"
-        )
+        assert not hasattr(ds, "ReferencedStudySequence")
     else:
         value = ds.ReferencedStudySequence[0].ReferencedSOPInstanceUID
         assert value == expected_value
-
-
-def test_within_sequence_tag_handling_after_replace() -> None:  # noqa
-    ds = Dataset()
-    ds.SOPClassUID = TEST_SOP_CLASS
-
-    # Create a sequence with two items
-    ds.ReferencedStudySequence = pydicom.sequence.Sequence([Dataset()])
-    ds.ReferencedStudySequence[0].ReferencedSOPInstanceUID = "1.2.3"
-    ds.ReferencedStudySequence[0].ReferencedSOPClassUID = "3.4.5"
-
-    deidentifier = DicomDeidentifier(
-        procedure={
-            "sopClass": {
-                TEST_SOP_CLASS: {
-                    "tag": {
-                        tag("ReferencedStudySequence"): {
-                            "default": ActionKind.REPLACE
-                        },
-                        tag("ReferencedSOPInstanceUID"): {
-                            "default": ActionKind.REMOVE,
-                        },
-                    },
-                    "default": ActionKind.KEEP,
-                }
-            },
-        }
-    )
-    deidentifier.deidentify_dataset(ds)
-
-    # The sequence is REPLACEd but the inner tag is REMOVED
-    assert hasattr(ds, "ReferencedStudySequence")
-    value = ds.ReferencedStudySequence[0].ReferencedSOPClassUID
-    assert value == "1.2.3.4.5.6.7.8.9.0.1.2.3.4.5.6.7.8.9.0"  # Dummy value
-    assert not hasattr(
-        ds.ReferencedStudySequence[0], "ReferencedSOPInstanceUID"
-    )
