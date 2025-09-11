@@ -710,3 +710,45 @@ def test_within_sequence_tag_handling(  # noqa
     else:
         value = ds.ReferencedStudySequence[0].ReferencedSOPInstanceUID
         assert value == expected_value
+
+
+@pytest.mark.parametrize(
+    "action",
+    (
+        ActionKind.KEEP,
+        ActionKind.REMOVE,
+        ActionKind.REPLACE,
+        ActionKind.REPLACE_0,
+    ),
+)
+def test_unique_value(action: ActionKind) -> None:  # noqa
+    deidentifier = DicomDeidentifier(
+        procedure={
+            "sopClass": {
+                TEST_SOP_CLASS: {
+                    "tag": {
+                        tag("PatientName"): {
+                            "default": action,
+                            "justification": "action justification",
+                        },
+                    },
+                }
+            },
+        },
+        assert_unique_value_for={"PatientName"},
+    )
+
+    ds = Dataset()
+    ds.SOPClassUID = TEST_SOP_CLASS
+    ds.PatientName = "Test^Patient"
+
+    deidentifier.deidentify_dataset(ds)
+
+    ds_other = Dataset()
+    ds_other.SOPClassUID = TEST_SOP_CLASS
+    ds_other.PatientName = "Test^AnotherPatient"
+
+    with pytest.raises(
+        RejectedDICOMFileError, match="has differing values across files"
+    ):
+        deidentifier.deidentify_dataset(ds_other)
