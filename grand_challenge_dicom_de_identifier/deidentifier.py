@@ -371,8 +371,7 @@ class DicomDeidentifier:
             elif self._unique_value_lookup[elem.keyword] != elem.value:
                 raise RejectedDICOMFileError(
                     justification=f"Element {elem.keyword!r} has differing values "
-                    f"across files: {self._unique_value_lookup[elem.keyword]} "
-                    f"vs {elem.value}"
+                    "across files: these must be identical."
                 )
 
     def _handle_remove_action(self, context: ActionContext, /) -> None:
