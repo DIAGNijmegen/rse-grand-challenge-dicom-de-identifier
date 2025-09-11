@@ -19,7 +19,7 @@ from grand_challenge_dicom_de_identifier.exceptions import (
 from grand_challenge_dicom_de_identifier.models import ActionKind
 from grand_challenge_dicom_de_identifier.typing import Action
 
-# Requested via http://www.medicalconnections.co.uk/
+# Requested via https://www.medicalconnections.co.uk/FreeUID.html
 GRAND_CHALLENGE_ROOT_UID: str = "1.2.826.0.1.3680043.10.1666."
 
 # VRs (Value Representations) that should be blanked when using "Z" action
@@ -204,8 +204,6 @@ class DicomDeidentifier:
     ) -> Dict[str, Any]:
         for keyword, value in forced_inserts.items():
             vr = pydicom.datadict.dictionary_VR(keyword)
-            if vr == "UI":
-                value = GRAND_CHALLENGE_ROOT_UID + str(value)
             pydicom.dataelem.validate_value(
                 vr=vr, value=value, validation_mode=pydicom.config.RAISE
             )
