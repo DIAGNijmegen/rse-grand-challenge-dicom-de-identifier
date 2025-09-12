@@ -767,16 +767,23 @@ def test_unique_value(action: ActionKind) -> None:  # noqa
         ActionKind.REJECT,
     ],
 )
-def test_forced_inserts_action(  # noqa
+@pytest.mark.parametrize(
+    "element_keyword, arg_keyword",
+    [
+        ("StudyInstanceUID", "study_instance_uid_suffix"),
+        ("SeriesInstanceUID", "series_instance_uid_suffix"),
+    ],
+)
+def test_forced_suffix(  # noqa
     start_value: Optional[str],
     action: ActionKind,
+    element_keyword: str,
+    arg_keyword: str,
 ) -> None:
     ds = Dataset()
     ds.SOPClassUID = TEST_SOP_CLASS
     if start_value is not None:
-        ds.PatientName = start_value
-
-    forced_value = "FORCED^VALUE"
+        setattr(ds, element_keyword, start_value)
 
     deidentifier = DicomDeidentifier(
         procedure={
@@ -788,31 +795,77 @@ def test_forced_inserts_action(  # noqa
                 }
             },
         },
-        forced_inserts={
-            "PatientName": forced_value,
-        },
+        **{arg_keyword: "1.2.3"},
     )
 
     deidentifier.deidentify_dataset(ds)
-    assert ds.PatientName == forced_value
+    new_value = cast(DataElement, ds[element_keyword]).value
+    assert new_value == "1.2.826.0.1.3680043.10.1666.1.2.3"
 
-    assert getattr(ds, "PatientName", None) == forced_value
 
-
-def test_forced_inserts_forced_validity() -> None:  # noqa
+@pytest.mark.parametrize(
+    "keyword",
+    (
+        "study_instance_uid_suffix",
+        "series_instance_uid_suffix",
+    ),
+)
+@pytest.mark.parametrize(
+    "value, context",
+    (
+        ("", nullcontext()),
+        ("1.2.3", nullcontext()),
+        (
+            "1.2.3.",
+            pytest.raises(
+                ValueError,
+                match="Invalid value for VR UI:",
+            ),
+        ),
+        (
+            ".1.2.3",
+            pytest.raises(
+                ValueError,
+                match="Invalid value for VR UI:",
+            ),
+        ),
+        (
+            "1..2.3",
+            pytest.raises(
+                ValueError,
+                match="Invalid value for VR UI",
+            ),
+        ),
+        (
+            "1.2a.3",
+            pytest.raises(
+                ValueError,
+                match="Invalid value for VR UI",
+            ),
+        ),
+        (
+            "1" * 65,  # Can only be 64 chars
+            pytest.raises(
+                ValueError,
+                match="exceeds the maximum length of 64",
+            ),
+        ),
+    ),
+)
+def test_forced_forced_validity(  # noqa
+    keyword: str,
+    value: str,
+    context: Any,
+) -> None:
     ds = Dataset()
     ds.SOPClassUID = TEST_SOP_CLASS
-    ds.StudyInstanceUID = "1.2.3"
 
-    with pytest.raises(
-        ValueError,
-        match="exceeds the maximum length of 64",
-    ):
+    with context:
         _ = DicomDeidentifier(
             procedure={
                 "sopClass": {TEST_SOP_CLASS: {"tag": {}}},
             },
-            forced_inserts={
-                "StudyInstanceUID": "1" * 65,  # Can only be 64 chars
+            **{
+                keyword: value,
             },
         )
