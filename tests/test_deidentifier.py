@@ -756,7 +756,7 @@ def test_unique_value(action: ActionKind) -> None:  # noqa
 
 @pytest.mark.parametrize(
     "start_value",
-    ["Test^Patient", None],
+    ["1.2.3", None],
 )
 @pytest.mark.parametrize(
     "action",
@@ -815,6 +815,7 @@ def test_forced_suffix(  # noqa
     (
         ("", nullcontext()),
         ("1.2.3", nullcontext()),
+        ("1" * 32, nullcontext()),
         (
             "1.2.3.",
             pytest.raises(
@@ -844,7 +845,7 @@ def test_forced_suffix(  # noqa
             ),
         ),
         (
-            "1" * 65,  # Can only be 64 chars
+            "1" * 40,  # Can only be 64 chars
             pytest.raises(
                 ValueError,
                 match="exceeds the maximum length of 64",

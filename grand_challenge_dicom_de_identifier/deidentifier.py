@@ -138,6 +138,9 @@ class DicomDeidentifier:
 
     """
 
+    _overwrite_study_instance_uid: None | str = None
+    _overwrite_series_instance_uid: None | str = None
+
     def __init__(
         self,
         procedure: None | Dict[str, Any] = None,
@@ -179,15 +182,19 @@ class DicomDeidentifier:
         self.uid_map: Dict[str, pydicom.uid.UID] = defaultdict(
             lambda: pydicom.uid.generate_uid(prefix=GRAND_CHALLENGE_ROOT_UID)
         )
-        self.study_instance_uid_suffix = study_instance_uid_suffix
         if study_instance_uid_suffix:
-            self._assert_valid_value(
-                "StudyInstanceUID", study_instance_uid_suffix
+            self._overwrite_study_instance_uid = (
+                GRAND_CHALLENGE_ROOT_UID + study_instance_uid_suffix
             )
-        self.series_instance_uid_suffix = series_instance_uid_suffix
-        if series_instance_uid_suffix:
             self._assert_valid_value(
-                "SeriesInstanceUID", series_instance_uid_suffix
+                "StudyInstanceUID", self._overwrite_study_instance_uid
+            )
+        if series_instance_uid_suffix:
+            self._overwrite_series_instance_uid = (
+                GRAND_CHALLENGE_ROOT_UID + series_instance_uid_suffix
+            )
+            self._assert_valid_value(
+                "SeriesInstanceUID", self._overwrite_series_instance_uid
             )
 
         self._action_map: Dict[str, Callable[[ActionContext], None]] = {
@@ -323,17 +330,17 @@ class DicomDeidentifier:
         Args:
             dataset: DICOM dataset to modify
         """
-        if self.study_instance_uid_suffix:
+        if self._overwrite_study_instance_uid:
             dataset.add_new(
                 "StudyInstanceUID",
                 "UI",
-                GRAND_CHALLENGE_ROOT_UID + self.study_instance_uid_suffix,
+                self._overwrite_study_instance_uid,
             )
-        if self.series_instance_uid_suffix:
+        if self._overwrite_series_instance_uid:
             dataset.add_new(
                 "SeriesInstanceUID",
                 "UI",
-                GRAND_CHALLENGE_ROOT_UID + self.series_instance_uid_suffix,
+                self._overwrite_series_instance_uid,
             )
 
     def _handle_element(
