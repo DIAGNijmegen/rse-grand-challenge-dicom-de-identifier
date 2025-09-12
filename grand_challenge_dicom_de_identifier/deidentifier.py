@@ -2,7 +2,6 @@ import os
 import struct
 from collections import defaultdict
 from dataclasses import dataclass
-from itertools import chain
 from typing import Any, AnyStr, BinaryIO, Callable, Collection, Dict, cast
 
 import pydicom
@@ -139,11 +138,15 @@ class DicomDeidentifier:
 
     """
 
+    _overwrite_study_instance_uid: None | str = None
+    _overwrite_series_instance_uid: None | str = None
+
     def __init__(
         self,
         procedure: None | Dict[str, Any] = None,
         assert_unique_value_for: None | Collection[str] = None,
-        forced_inserts: None | Dict[str, Any] = None,
+        study_instance_uid_suffix: str = "",
+        series_instance_uid_suffix: str = "",
     ) -> None:
         """Initialize the DicomDeidentifier.
 
@@ -160,29 +163,39 @@ class DicomDeidentifier:
             elements compared to previous files, a RejectedDICOMFileError
             is raised. By default no such check is performed.
 
-        forced_inserts : optional
-            A dictionary of element keywords (e.g. {"PatientName": "ANONYMIZED"})
-            that will always be inserted with the given value, regardless
-            of the action specified in the procedure. By default no forced
-            inserts are applied.
+        study_instance_uid_suffix : optional
+            Suffix to append to the root uid for StudyInstanceUIDs.
+
+        series_instance_uid_suffix : optional
+            Suffix to append to root uid for SeriesInstanceUIDs.
         """
         self.procedure: Dict[str, Any] = procedure or grand_challenge_procedure
 
         self._assert_unique_values_for: Collection[str] = (
             assert_unique_value_for or set()
         )
-        self._forced_inserts: Dict[str, Any] = self._process_forced_inserts(
-            forced_inserts or {}
-        )
-        for keyword in chain(
-            self._assert_unique_values_for, self._forced_inserts
-        ):
+        for keyword in self._assert_unique_values_for:
             self._assert_valid_keyword(keyword)
-
         self._unique_value_lookup: Dict[str, Any] = {}
+
+        # Setup UID handling
         self.uid_map: Dict[str, pydicom.uid.UID] = defaultdict(
             lambda: pydicom.uid.generate_uid(prefix=GRAND_CHALLENGE_ROOT_UID)
         )
+        if study_instance_uid_suffix:
+            self._overwrite_study_instance_uid = (
+                GRAND_CHALLENGE_ROOT_UID + study_instance_uid_suffix
+            )
+            self._assert_valid_value(
+                "StudyInstanceUID", self._overwrite_study_instance_uid
+            )
+        if series_instance_uid_suffix:
+            self._overwrite_series_instance_uid = (
+                GRAND_CHALLENGE_ROOT_UID + series_instance_uid_suffix
+            )
+            self._assert_valid_value(
+                "SeriesInstanceUID", self._overwrite_series_instance_uid
+            )
 
         self._action_map: Dict[str, Callable[[ActionContext], None]] = {
             ActionKind.REMOVE: self._handle_remove_action,
@@ -199,16 +212,11 @@ class DicomDeidentifier:
             raise ValueError(f"Keyword {keyword!r} is not valid")
 
     @staticmethod
-    def _process_forced_inserts(
-        forced_inserts: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        for keyword, value in forced_inserts.items():
-            vr = pydicom.datadict.dictionary_VR(keyword)
-            pydicom.dataelem.validate_value(
-                vr=vr, value=value, validation_mode=pydicom.config.RAISE
-            )
-            forced_inserts[keyword] = value
-        return forced_inserts
+    def _assert_valid_value(keyword: str, value: Any) -> None:
+        vr = pydicom.datadict.dictionary_VR(keyword)
+        pydicom.dataelem.validate_value(
+            vr=vr, value=value, validation_mode=pydicom.config.RAISE
+        )
 
     def deidentify_file(
         self,
@@ -251,7 +259,7 @@ class DicomDeidentifier:
         # Some post-processing steps
         self.set_deidentification_method_tag(dataset)
         self.set_patient_identity_removed_tag(dataset)
-        self.set_forced_inserts(dataset)
+        self.set_overwrites(dataset)
 
     def _get_sop_class_procedure(self, dataset: Dataset) -> Any:
         try:
@@ -315,15 +323,25 @@ class DicomDeidentifier:
         else:
             dataset.DeidentificationMethod = description
 
-    def set_forced_inserts(self, dataset: Dataset) -> None:
+    def set_overwrites(self, dataset: Dataset) -> None:
         """
-        Insert or update elements in the dataset based on forced_inserts.
+        Add or overwrite elements in the dataset.
 
         Args:
             dataset: DICOM dataset to modify
         """
-        for keyword, value in self._forced_inserts.items():
-            setattr(dataset, keyword, value)
+        if self._overwrite_study_instance_uid:
+            dataset.add_new(
+                "StudyInstanceUID",
+                "UI",
+                self._overwrite_study_instance_uid,
+            )
+        if self._overwrite_series_instance_uid:
+            dataset.add_new(
+                "SeriesInstanceUID",
+                "UI",
+                self._overwrite_series_instance_uid,
+            )
 
     def _handle_element(
         self,
@@ -343,24 +361,23 @@ class DicomDeidentifier:
 
         self._check_unique_value(elem=elem)
 
-        if elem.keyword not in self._forced_inserts:
-            try:
-                handler = self._action_map[action]
-            except KeyError:
-                raise NotImplementedError(
-                    f"Action {action} not implemented"
-                ) from None
+        try:
+            handler = self._action_map[action]
+        except KeyError:
+            raise NotImplementedError(
+                f"Action {action} not implemented"
+            ) from None
 
-            handler(
-                ActionContext(
-                    dataset=dataset,
-                    elem=elem,
-                    action_lookup=action_lookup,
-                    default_action=default_action,
-                    action=action,
-                    justification=justification,
-                )
+        handler(
+            ActionContext(
+                dataset=dataset,
+                elem=elem,
+                action_lookup=action_lookup,
+                default_action=default_action,
+                action=action,
+                justification=justification,
             )
+        )
 
     def _check_unique_value(self, elem: DataElement) -> None:
         if elem.keyword in self._assert_unique_values_for:
