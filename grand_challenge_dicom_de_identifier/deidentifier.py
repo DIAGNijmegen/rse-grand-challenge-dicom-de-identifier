@@ -259,7 +259,7 @@ class DicomDeidentifier:
         # Some post-processing steps
         self.set_deidentification_method_tag(dataset)
         self.set_patient_identity_removed_tag(dataset)
-        self.set_forced_inserts(dataset)
+        self.set_overwrites(dataset)
 
     def _get_sop_class_procedure(self, dataset: Dataset) -> Any:
         try:
@@ -323,9 +323,9 @@ class DicomDeidentifier:
         else:
             dataset.DeidentificationMethod = description
 
-    def set_forced_inserts(self, dataset: Dataset) -> None:
+    def set_overwrites(self, dataset: Dataset) -> None:
         """
-        Insert or update elements in the dataset based.
+        Add or overwrite elements in the dataset.
 
         Args:
             dataset: DICOM dataset to modify
