@@ -237,8 +237,17 @@ class DicomDeidentifier:
                 enforce_file_format=True,
             )
 
+    @staticmethod
+    def _check_burned_in_annotations(dataset: pydicom.Dataset) -> None:
+        burned_in = getattr(dataset, "BurnedInAnnotation", "").casefold()
+        if burned_in == "yes":
+            raise RejectedDICOMFileError(
+                justification="DICOM file contains burned in annotations"
+            )
+
     def deidentify_dataset(self, dataset: pydicom.Dataset) -> None:
         """Process a DICOM dataset in place."""
+        self._check_burned_in_annotations(dataset)
         sop_class_procedure = self._get_sop_class_procedure(dataset)
 
         for elem in dataset:
