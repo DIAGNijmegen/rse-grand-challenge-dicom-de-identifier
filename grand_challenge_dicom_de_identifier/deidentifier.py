@@ -440,17 +440,7 @@ class DicomDeidentifier:
 
     def _handle_replace_0(self, context: ActionContext, /) -> None:
         if context.elem.VR == "SQ":  # Sequence
-            for dataset in context.elem.value:
-                for elem in dataset:
-                    self._handle_element(
-                        elem=elem,
-                        dataset=dataset,
-                        action_lookup={},  # Always defer to the default
-                        default_action={
-                            "default": ActionKind.REPLACE_0,
-                            "justification": "Parent sequence was replaced (0)",
-                        },
-                    )
+            context.elem.value = []
         elif context.elem.VR in VR_TO_BLANK:
             context.elem.value = ""
         else:
