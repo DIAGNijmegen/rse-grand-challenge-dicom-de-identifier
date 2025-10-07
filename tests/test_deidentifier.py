@@ -870,3 +870,53 @@ def test_forced_forced_validity(  # noqa
                 keyword: value,
             },
         )
+
+
+@pytest.mark.parametrize(
+    "burned_in_value, context",
+    (
+        (
+            "YES",
+            pytest.raises(
+                RejectedDICOMFileError, match="contains burned in annotations"
+            ),
+        ),
+        (
+            "yes",
+            pytest.raises(
+                RejectedDICOMFileError, match="contains burned in annotations"
+            ),
+        ),
+        (
+            "YeS",
+            pytest.raises(
+                RejectedDICOMFileError, match="contains burned in annotations"
+            ),
+        ),
+        ("NO", nullcontext()),
+        ("no", nullcontext()),
+        ("", nullcontext()),
+        (None, nullcontext()),
+    ),
+)
+def test_burned_in_annotation_rejection(  # noqa
+    burned_in_value: Optional[str],
+    context: Any,
+) -> None:
+    ds = Dataset()
+    ds.SOPClassUID = TEST_SOP_CLASS
+    if burned_in_value is not None:
+        ds.BurnedInAnnotation = burned_in_value
+
+    deidentifier = DicomDeidentifier(
+        procedure={
+            "sopClass": {
+                TEST_SOP_CLASS: {
+                    "tag": {},
+                }
+            },
+        }
+    )
+
+    with context:
+        deidentifier.deidentify_dataset(ds)
