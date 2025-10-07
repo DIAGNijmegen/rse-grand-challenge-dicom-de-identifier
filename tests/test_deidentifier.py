@@ -596,7 +596,7 @@ def test_missing_dummy_value() -> None:  # noqa
     (
         (ActionKind.KEEP, 2),
         (ActionKind.REPLACE, 2),
-        (ActionKind.REPLACE_0, 2),
+        (ActionKind.REPLACE_0, 0),
         (ActionKind.REMOVE, 0),
     ),
 )
