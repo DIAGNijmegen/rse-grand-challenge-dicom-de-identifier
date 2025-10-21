@@ -22,7 +22,7 @@ from grand_challenge_dicom_de_identifier.deidentifier import DicomDeidentifier
 deidentifier = DicomDeidentifier()
 
 # Deidentify a single file
-deidentifier = deidentifier.deidentify_file(
+deidentifier.deidentify_file(
     "input.dcm",
     output="anom/output.dcm"
 )
@@ -38,7 +38,7 @@ deidentifier = DicomDeidentifier()
 dataset = pydicom.Dataset()
 
 # Deidentify a pydicom Dataset
-deidentifier = deidentifier.deidentify_dataset(
+deidentifier.deidentify_dataset(
     dataset
 )
 
