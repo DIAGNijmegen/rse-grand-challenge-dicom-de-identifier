@@ -21,6 +21,7 @@ dev = [
     "pytest",
     "mypy",
     "types-pydicom",
+    "pre-commit",
 ]
 
 [tool.mypy]
