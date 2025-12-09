@@ -19,13 +19,9 @@ jobs:
       steps:
         - uses: actions/checkout@v4
         - name: Install Python ${{ env.MINIMUM_PYTHON_VERSION }}
-          uses: actions/setup-python@v5
+          uses: astral-sh/setup-uv@v6
           with:
             python-version: ${{ env.MINIMUM_PYTHON_VERSION }}
-        - name: Install dependencies
-          run: |
-            python -m pip install --upgrade pip
-            python -m pip install uv
         - name: Build the package
           run: uv build
         - name: 'Upload Artifact'
@@ -37,7 +33,7 @@ jobs:
             retention-days: 1
 
   deploy-to-pypi:
-      # IMPORTANT: use a seperate job for this as each step has access to the tokens
+      # IMPORTANT: use a separate job for this as each step has access to the tokens
       needs: build-for-pypi
       runs-on: ubuntu-latest
       environment: pypi
