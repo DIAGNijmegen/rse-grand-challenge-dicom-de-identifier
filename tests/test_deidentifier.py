@@ -2,7 +2,7 @@
 
 import struct
 from contextlib import nullcontext
-from typing import Any, Dict, Optional, cast
+from typing import Any, cast
 
 import pydicom
 import pytest
@@ -109,7 +109,7 @@ from tests import TEST_SOP_CLASS, tag
 )
 def test_sop_class_handling(  # noqa
     dicom_sop_class: str,
-    procedure: Dict[str, Any],
+    procedure: dict[str, Any],
     context: Any,
 ) -> None:
     ds = Dataset()
@@ -235,7 +235,7 @@ def test_sop_class_handling(  # noqa
     ),
 )
 def test_action_handling(  # noqa
-    procedure: Dict[str, Any],
+    procedure: dict[str, Any],
     context: Any,
 ) -> None:
     ds = Dataset()
@@ -679,7 +679,7 @@ def test_sequence_handling_remove_replace_keep(  # noqa
 def test_within_sequence_tag_handling(  # noqa
     sequence_action: ActionKind,
     tag_action: ActionKind,
-    expected_value: Optional[str],
+    expected_value: str | None,
 ) -> None:
     ds = Dataset()
     ds.SOPClassUID = TEST_SOP_CLASS
@@ -775,7 +775,7 @@ def test_unique_value(action: ActionKind) -> None:  # noqa
     ],
 )
 def test_forced_suffix(  # noqa
-    start_value: Optional[str],
+    start_value: str | None,
     action: ActionKind,
     element_keyword: str,
     arg_keyword: str,
@@ -900,7 +900,7 @@ def test_forced_forced_validity(  # noqa
     ),
 )
 def test_burned_in_annotation_rejection(  # noqa
-    burned_in_value: Optional[str],
+    burned_in_value: str | None,
     context: Any,
 ) -> None:
     ds = Dataset()

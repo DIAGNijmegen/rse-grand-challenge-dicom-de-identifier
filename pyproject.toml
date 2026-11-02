@@ -6,7 +6,7 @@ authors = [
     {name = "Chris van Run"},
 ]
 license = {text = "Apache-2.0"}
-requires-python = ">=3.10, <4.0"
+requires-python = ">=3.11, <4.0"
 dependencies = [
     "pydicom>=2.4.0",
     "grand-challenge-dicom-de-id-procedure",
@@ -25,7 +25,7 @@ dev = [
 ]
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.11"
 strict = true
 show_error_codes = true
 
@@ -36,7 +36,7 @@ line_length = 79
 
 [tool.black]
 line-length = 79
-target-version = ['py310']
+target-version = ['py311']
 
 [tool.pytest.ini_options]
 testpaths = [

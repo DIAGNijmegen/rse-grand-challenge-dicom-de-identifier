@@ -7,6 +7,12 @@ repos:
       - id: end-of-file-fixer
       - id: mixed-line-ending
       - id: trailing-whitespace
+  - repo: https://github.com/asottile/pyupgrade
+    rev: v3.22.0
+    hooks:
+      - id: pyupgrade
+        language: python
+        args: [ --py311-plus ]
   - repo: https://github.com/pycqa/isort
     rev: 9.0.2
     hooks:
