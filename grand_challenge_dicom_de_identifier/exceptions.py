@@ -1,10 +1,7 @@
-from typing import Optional
-
-
 class RejectedDICOMFileError(Exception):
     """Raised when a DICOM file is rejected."""
 
-    def __init__(self, justification: Optional[str] = None) -> None:
+    def __init__(self, justification: str | None = None) -> None:
         """
         Initialize the exception with an optional justification message.
 

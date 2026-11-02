@@ -1,8 +1,9 @@
 import os
 import struct
 from collections import defaultdict
+from collections.abc import Callable, Collection
 from dataclasses import dataclass
-from typing import Any, AnyStr, BinaryIO, Callable, Collection, Dict, cast
+from typing import Any, AnyStr, BinaryIO, cast
 
 import pydicom
 from grand_challenge_dicom_de_id_procedure import (
@@ -33,7 +34,7 @@ VR_TO_BLANK: set[str] = {
 }
 
 # Dummy values for different VRs when "Z" or "D" action is used
-VR_DUMMY_VALUES: Dict[str, Any] = {
+VR_DUMMY_VALUES: dict[str, Any] = {
     # Application Entity - up to 16 characters, no leading/trailing spaces
     "AE": "DUMMY_AE",
     # Age String - 4 characters (nnnD, nnnW, nnnM, nnnY), here 30 years
@@ -111,7 +112,7 @@ class ActionContext:
 
     dataset: Dataset
     elem: DataElement
-    action_lookup: Dict[str, Action]
+    action_lookup: dict[str, Action]
     default_action: Action
     action: str
     justification: str
@@ -143,7 +144,7 @@ class DicomDeidentifier:
 
     def __init__(
         self,
-        procedure: None | Dict[str, Any] = None,
+        procedure: None | dict[str, Any] = None,
         assert_unique_value_for: None | Collection[str] = None,
         study_instance_uid_suffix: str = "",
         series_instance_uid_suffix: str = "",
@@ -169,17 +170,17 @@ class DicomDeidentifier:
         series_instance_uid_suffix : optional
             Suffix to append to root uid for SeriesInstanceUIDs.
         """
-        self.procedure: Dict[str, Any] = procedure or grand_challenge_procedure
+        self.procedure: dict[str, Any] = procedure or grand_challenge_procedure
 
         self._assert_unique_values_for: Collection[str] = (
             assert_unique_value_for or set()
         )
         for keyword in self._assert_unique_values_for:
             self._assert_valid_keyword(keyword)
-        self._unique_value_lookup: Dict[str, Any] = {}
+        self._unique_value_lookup: dict[str, Any] = {}
 
         # Setup UID handling
-        self.uid_map: Dict[str, pydicom.uid.UID] = defaultdict(
+        self.uid_map: dict[str, pydicom.uid.UID] = defaultdict(
             lambda: pydicom.uid.generate_uid(prefix=GRAND_CHALLENGE_ROOT_UID)
         )
         if study_instance_uid_suffix:
@@ -197,7 +198,7 @@ class DicomDeidentifier:
                 "SeriesInstanceUID", self._overwrite_series_instance_uid
             )
 
-        self._action_map: Dict[str, Callable[[ActionContext], None]] = {
+        self._action_map: dict[str, Callable[[ActionContext], None]] = {
             ActionKind.REMOVE: self._handle_remove_action,
             ActionKind.KEEP: self._handle_keep_action,
             ActionKind.REJECT: self._handle_reject_action,
@@ -356,7 +357,7 @@ class DicomDeidentifier:
         self,
         elem: DataElement,
         dataset: Dataset,
-        action_lookup: Dict[str, Action],
+        action_lookup: dict[str, Action],
         default_action: Action,
     ) -> None:
         try:
